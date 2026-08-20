@@ -24,10 +24,7 @@ let authJsConfig: any = null;
 
 const JWT_SECRET = (() => {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("JWT_SECRET environment variable is required in production");
-  }
-  console.warn("[WARN] JWT_SECRET no configurado. Usando valor por defecto solo para desarrollo.");
+  console.warn("[WARN] JWT_SECRET no configurado. Usando valor por defecto. RECOMENDADO CONFIGURAR EN PRODUCCIÓN.");
   return "agencia-jwt-secret-dev-2026";
 })();
 const JWT_EXPIRES_IN = "24h";
