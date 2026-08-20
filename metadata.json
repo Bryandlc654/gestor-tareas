@@ -1,0 +1,6 @@
+{
+  "name": "Gestión de Agencia y Proyectos",
+  "description": "Sistema minimalista estilo Notion para gestión de tareas, CRM, canales de chat, credenciales y tickets de soporte de una agencia de desarrollo web.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
