@@ -1449,7 +1449,7 @@ async function startServer() {
     const messages: any[] = [
       {
         role: "system",
-        content: `Eres un asistente de gestión de proyectos para "Next Boost Peru". Ayudas a los miembros del equipo a consultar y gestionar el sistema completo.
+        content: `Eres un asistente de gestión de proyectos para "Iceberg Agency". Ayudas a los miembros del equipo a consultar y gestionar el sistema completo.
 
 Tus capacidades incluyen:
 - TAREAS: Consultar, crear y actualizar tareas del Kanban (cambiar estado, prioridad, asignado, etc.)

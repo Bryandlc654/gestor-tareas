@@ -8,7 +8,7 @@ interface ChatMsg {
 
 export default function AIAssistantView({ token }: { token: string }) {
   const [messages, setMessages] = useState<ChatMsg[]>([
-    { role: 'assistant', text: '¡Hola! Soy el asistente de Next Boost Peru. Puedo consultar el estado de tus tareas, crear nuevas tareas y ayudarte a organizar tu trabajo. ¿En qué puedo ayudarte?' },
+    { role: 'assistant', text: '¡Hola! Soy el asistente de Iceberg Agency. Puedo consultar el estado de tus tareas, crear nuevas tareas y ayudarte a organizar tu trabajo. ¿En qué puedo ayudarte?' },
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);

@@ -366,7 +366,7 @@ async function seedIfEmpty(): Promise<void> {
   console.log('[MySQL] Seeding initial data...');
 
   await executeQuery(`INSERT INTO agency_info (id,name,tagline,description,skills) VALUES (?,?,?,?,?)`,
-    ['main', 'Next Boost Peru', 'Desarrollo Web & Apps de Alto Rendimiento', 'Especializados en crear plataformas web ultrarrápidas, diseño de experiencia de usuario minimalista y automatizaciones a medida.', JSON.stringify(['React & Next.js', 'Tailwind CSS', 'Node.js & Express', 'Docker & Kubernetes', 'Cloud Run Integrations'])]);
+    ['main', 'Iceberg Agency', 'Desarrollo Web & Apps de Alto Rendimiento', 'Especializados en crear plataformas web ultrarrápidas, diseño de experiencia de usuario minimalista y automatizaciones a medida.', JSON.stringify(['React & Next.js', 'Tailwind CSS', 'Node.js & Express', 'Docker & Kubernetes', 'Cloud Run Integrations'])]);
 
   const roles = [
     { id: 'role-superadmin', name: 'Super Administrador', description: 'Acceso absoluto a todos los módulos.', permissions: JSON.stringify(['manage_workspaces','manage_crm','manage_users','manage_roles','manage_credentials','view_all_tickets','chat_all','manage_agency']) },

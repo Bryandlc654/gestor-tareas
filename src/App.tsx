@@ -174,7 +174,7 @@ export default function App() {
         if (payload.type === 'notification') {
           const n = payload.notification;
           setNotifications(prev => [n, ...prev]);
-          notifySoundAndBrowser('Next Boost Peru', n.text);
+          notifySoundAndBrowser('Iceberg Agency', n.text);
         } else if (payload.type === 'chat_message') {
           const msg = payload.message;
           setChatMessages(prev => [...prev, msg]);
@@ -486,7 +486,7 @@ export default function App() {
           <div className="flex items-center justify-between border-b border-[#EDEDEB] pb-4 mb-6">
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-neutral-700" />
-              <span className="font-semibold text-[#37352F] tracking-tight text-sm">Next Boost Peru — Portal de Soporte</span>
+              <span className="font-semibold text-[#37352F] tracking-tight text-sm">Iceberg Agency — Portal de Soporte</span>
             </div>
             {!isPublicPath && (
               <button
@@ -542,9 +542,9 @@ export default function App() {
           {/* Brand/Logo header */}
           <div className="flex items-center justify-between border-b border-[#EDEDEB] pb-4">
             <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-neutral-700" />
+              <img src="/logo.png" alt="Iceberg Agency Logo" className="w-6 h-6 object-contain" />
               <div>
-                <h2 className="font-semibold text-sm tracking-tight text-[#37352F]">Next Boost Peru</h2>
+                <h2 className="font-semibold text-sm tracking-tight text-[#37352F]">Iceberg Agency</h2>
               </div>
             </div>
             <button onClick={() => setSidebarOpen(false)} className="p-1 hover:bg-[#EDEDEB] rounded text-[#5A5A57] cursor-pointer" title="Cerrar menú">

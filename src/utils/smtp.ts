@@ -48,7 +48,7 @@ export function emailTemplate({ userName, title, message, buttonText, buttonUrl,
       <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
         <!-- Header -->
         <tr><td style="background-color:#37352F;padding:24px 32px;border-radius:12px 12px 0 0;">
-          <h1 style="margin:0;color:#FFFFFF;font-size:18px;font-weight:700;letter-spacing:-0.3px;">Next Boost Peru</h1>
+          <h1 style="margin:0;color:#FFFFFF;font-size:18px;font-weight:700;letter-spacing:-0.3px;">Iceberg Agency</h1>
           <p style="margin:4px 0 0;color:#91918E;font-size:12px;">CRM & Project Management</p>
         </td></tr>
         <!-- Body -->
@@ -76,7 +76,7 @@ export function emailTemplate({ userName, title, message, buttonText, buttonUrl,
         <!-- Footer -->
         <tr><td style="background-color:#F7F7F5;padding:20px 32px;border:1px solid #EDEDEB;border-top:none;border-radius:0 0 12px 12px;">
           <p style="margin:0;color:#91918E;font-size:11px;text-align:center;">
-            ${footer || 'Este correo fue enviado automáticamente por el sistema CRM de Next Boost Peru.'}
+            ${footer || 'Este correo fue enviado automáticamente por el sistema CRM de Iceberg Agency.'}
           </p>
         </td></tr>
       </table>
@@ -90,7 +90,7 @@ export async function sendEmail(to: string, subject: string, html: string) {
   const t = getTransporter();
   if (!t) return;
 
-  const fromName = process.env.SMTP_FROM_NAME || 'Next Boost Peru';
+  const fromName = process.env.SMTP_FROM_NAME || 'Iceberg Agency';
   const fromEmail = process.env.SMTP_FROM_EMAIL || 'noreply@nextboostperu.com';
 
   try {

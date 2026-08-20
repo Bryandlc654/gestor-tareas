@@ -32,10 +32,10 @@ export default function LoginPage() {
       <div className="w-full max-w-sm animate-fade-in">
         <div className="bg-white border border-[#EDEDEB] rounded-xl px-8 py-10 shadow-lg">
           <div className="text-center mb-8">
-            <div className="w-12 h-12 bg-[#37352F] rounded-xl flex items-center justify-center mx-auto mb-4">
-              <span className="text-white font-bold text-lg">NB</span>
+            <div className="w-16 h-16 bg-white border border-[#EDEDEB] rounded-xl flex items-center justify-center mx-auto mb-4 p-1">
+              <img src="/logo.png" alt="Iceberg Agency" className="w-full h-full object-contain" />
             </div>
-            <h1 className="text-xl font-bold text-[#37352F] tracking-tight">Next Boost Peru</h1>
+            <h1 className="text-xl font-bold text-[#37352F] tracking-tight">Iceberg Agency</h1>
             <p className="text-[13px] text-[#91918E] mt-1">Accede a tu panel de gestión</p>
           </div>
 
@@ -119,7 +119,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-[11px] text-[#91918E] text-center mt-6">
-          &copy; {new Date().getFullYear()} Next Boost Peru. Todos los derechos reservados.
+          &copy; {new Date().getFullYear()} Iceberg Agency. Todos los derechos reservados.
         </p>
       </div>
     </div>
