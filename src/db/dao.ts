@@ -4,7 +4,7 @@ import type {
   User, Role, Workspace, Folder, Task, PersonalTodo, Meeting, Client,
   Quote, Contract, Service, CredentialWeb, ChatChannel,
   ChatMessage, Notification, SupportTicket, TicketComment, TicketClient,
-  PortfolioItem, AgencyInfo, TaskComment, FCMToken
+  PortfolioItem, AgencyInfo, TaskComment, FCMToken, MeetingMinute
 } from '../types';
 
 const CACHE_PREFIX = 'dao:';
@@ -680,4 +680,43 @@ export async function getFCMTokensByUserId(userId: string): Promise<FCMToken[]> 
 export async function getAllFCMTokens(): Promise<FCMToken[]> {
   const rows = await executeQuery('SELECT * FROM fcm_tokens', []);
   return rows.map((r: any) => ({ id: r.id, userId: r.userId, token: r.token, createdAt: r.createdAt }));
+}
+
+// -- Meeting Minutes DAO --
+export async function getMeetingMinutes(): Promise<MeetingMinute[]> {
+  const key = cacheKey('meeting_minutes');
+  const cached = await cacheGet(key);
+  if (cached) return JSON.parse(cached as string);
+
+  const rows = await executeQuery('SELECT * FROM meeting_minutes ORDER BY date DESC', []);
+  const items = rows.map((r: any) => mapRow<MeetingMinute>(r));
+  await cacheSet(key, JSON.stringify(items), 1800);
+  return items;
+}
+
+export async function createMeetingMinute(item: MeetingMinute): Promise<void> {
+  await executeQuery(
+    'INSERT INTO meeting_minutes (id,title,date,participants,observations,documentUrl,createdAt) VALUES (?,?,?,?,?,?,?)',
+    [item.id, item.title, item.date, item.participants, item.observations, item.documentUrl, item.createdAt]
+  );
+  await cacheDelPattern('dao:meeting_minutes*');
+}
+
+export async function updateMeetingMinute(id: string, updates: Partial<MeetingMinute>): Promise<void> {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  for (const [k, v] of Object.entries(updates)) {
+    if (k === 'id') continue;
+    sets.push(`\`${k}\` = ?`);
+    params.push(typeof v === 'object' ? JSON.stringify(v) : v);
+  }
+  if (sets.length === 0) return;
+  params.push(id);
+  await executeQuery(`UPDATE meeting_minutes SET ${sets.join(', ')} WHERE id=?`, params);
+  await cacheDelPattern('dao:meeting_minutes*');
+}
+
+export async function deleteMeetingMinute(id: string): Promise<void> {
+  await executeQuery('DELETE FROM meeting_minutes WHERE id=?', [id]);
+  await cacheDelPattern('dao:meeting_minutes*');
 }

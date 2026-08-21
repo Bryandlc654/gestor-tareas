@@ -255,3 +255,13 @@ export interface SmartLinkData {
   favicon: string;
   provider: string;
 }
+
+export interface MeetingMinute {
+  id: string;
+  title: string;
+  date: string;
+  participants: string;
+  observations: string;
+  documentUrl: string;
+  createdAt: string;
+}

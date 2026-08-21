@@ -731,6 +731,35 @@ async function startServer() {
     res.json({ success: true });
   }));
 
+  // -- Meeting Minutes --
+  app.get("/api/meeting-minutes", asyncHandler(async (_req, res) => {
+    res.json(await dao.getMeetingMinutes());
+  }));
+
+  app.post("/api/meeting-minutes", asyncHandler(async (req, res) => {
+    const mm = {
+      id: genId("mm-"),
+      title: sanitizeStr(req.body.title, 255),
+      date: sanitizeStr(req.body.date, 50),
+      participants: sanitizeStr(req.body.participants, 1000),
+      observations: sanitizeStr(req.body.observations, 5000),
+      documentUrl: sanitizeStr(req.body.documentUrl, 500),
+      createdAt: new Date().toISOString()
+    };
+    await dao.createMeetingMinute(mm as any);
+    res.status(201).json(mm);
+  }));
+
+  app.put("/api/meeting-minutes/:id", asyncHandler(async (req, res) => {
+    await dao.updateMeetingMinute(req.params.id, req.body);
+    res.json({ success: true });
+  }));
+
+  app.delete("/api/meeting-minutes/:id", asyncHandler(async (req, res) => {
+    await dao.deleteMeetingMinute(req.params.id);
+    res.json({ success: true });
+  }));
+
   // 6. CRM
   app.get("/api/clients", asyncHandler(async (_req, res) => {
     res.json(await dao.listClients());

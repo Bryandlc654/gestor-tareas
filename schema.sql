@@ -194,3 +194,14 @@ CREATE TABLE IF NOT EXISTS solicitudes (
   status VARCHAR(50) DEFAULT 'pending',
   date VARCHAR(50)
 );
+
+-- 20. Meeting Minutes
+CREATE TABLE IF NOT EXISTS meeting_minutes (
+  id VARCHAR(255) PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  date VARCHAR(50),
+  participants TEXT,
+  observations TEXT,
+  documentUrl VARCHAR(500),
+  createdAt VARCHAR(100)
+);

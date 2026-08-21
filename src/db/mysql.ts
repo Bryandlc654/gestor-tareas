@@ -346,6 +346,17 @@ export async function bootstrapMysqlSchema(): Promise<void> {
       );
     `);
 
+    await executeQuery(`
+      CREATE TABLE IF NOT EXISTS meeting_minutes (
+        id VARCHAR(255) PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        date VARCHAR(50),
+        participants TEXT,
+        observations TEXT,
+        documentUrl VARCHAR(500),
+        createdAt VARCHAR(100)
+      );
+    `);
     console.log('[MySQL] Auto-migration schema successfully validated & created.');
     await seedIfEmpty();
     await seedCredentialsIfEmpty();

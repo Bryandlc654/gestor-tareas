@@ -8,7 +8,7 @@ import UserAvatar from './components/UserAvatar';
 import { 
   User, Role, Workspace, Folder as DBFolder, Task, TaskStatus, PersonalTodo, Meeting, Client, 
   Quote, Contract, Service, CredentialWeb, ChatChannel, 
-  ChatMessage, MessageAttachment, Notification, SupportTicket
+  ChatMessage, MessageAttachment, Notification, SupportTicket, MeetingMinute
 } from './types';
 
 // Component view imports
@@ -23,6 +23,7 @@ import CalendarTodoView from './components/CalendarTodoView';
 import PublicTicketForm from './components/PublicTicketForm';
 import AIAssistantView from './components/AIAssistantView';
 import LoginPage from './components/LoginPage';
+import MeetingMinutesView from './components/MeetingMinutesView';
 import { useAuth } from './contexts/AuthContext';
 import { notifySoundAndBrowser, requestNotifPermission } from './utils/notify';
 import { getFCMToken } from './firebase';
@@ -33,7 +34,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<
     'dashboard' | 'pipeline' | 'workspaces' | 'credentials' | 
-    'chat' | 'tickets' | 'rbac' | 'agency' | 'calendar' | 'public_portal' | 'assistant'
+    'chat' | 'tickets' | 'rbac' | 'agency' | 'calendar' | 'public_portal' | 'assistant' | 'actas'
   >((sessionStorage.getItem('nbp_activeTab') as any) || 'dashboard');
 
   const [isLoading, setIsLoading] = useState(true);
@@ -57,6 +58,7 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [meetingMinutes, setMeetingMinutes] = useState<MeetingMinute[]>([]);
 
   // Mode Selection: Portal público vs. Intranet Interna
   const isPublicPath = window.location.pathname === '/solicitudes';
@@ -82,7 +84,7 @@ export default function App() {
       const [
         resUsers, resRoles, resWS, resFolders, resTasks, resTodos, resMeetings,
         resClients, resQuotes, resContracts, resServices, resCreds,
-        resChans, resTickets
+        resChans, resTickets, resMinutes
       ] = await Promise.all([
         safeFetch('/api/users'),
         safeFetch('/api/roles'),
@@ -97,7 +99,8 @@ export default function App() {
         safeFetch('/api/services'),
         safeFetch('/api/credentials'),
         safeFetch('/api/channels'),
-        safeFetch('/api/tickets')
+        safeFetch('/api/tickets'),
+        safeFetch('/api/meeting-minutes')
       ]);
 
       setUsers(Array.isArray(resUsers) ? resUsers : []);
@@ -114,6 +117,7 @@ export default function App() {
       setCredentials(Array.isArray(resCreds) ? resCreds : []);
       setChatChannels(Array.isArray(resChans) ? resChans : []);
       setTickets(Array.isArray(resTickets) ? resTickets : []);
+      setMeetingMinutes(Array.isArray(resMinutes) ? resMinutes : []);
 
       // Fetch notifications relative to authenticated user
       if (activeUserId) {
@@ -454,6 +458,18 @@ export default function App() {
     const data = await callApi(`/api/tickets/${ticketId}/comments`, 'POST', payload);
     if (data) setTickets(prev => prev.map(t => t.id === ticketId ? data : t));
   };
+  const handleAddMeetingMinute = async (mm: Partial<MeetingMinute>) => {
+    const data = await callApi('/api/meeting-minutes', 'POST', mm);
+    if (data) setMeetingMinutes(prev => [data, ...prev]);
+  };
+  const handleUpdateMeetingMinute = async (id: string, mm: Partial<MeetingMinute>) => {
+    await callApi(`/api/meeting-minutes/${id}`, 'PUT', mm);
+    setMeetingMinutes(prev => prev.map(m => m.id === id ? { ...m, ...mm } : m));
+  };
+  const handleDeleteMeetingMinute = async (id: string) => {
+    await callApi(`/api/meeting-minutes/${id}`, 'DELETE');
+    setMeetingMinutes(prev => prev.filter(m => m.id !== id));
+  };
 
   // Mark notifications locally without refetch
   const handleMarkAllNotifications = async () => {
@@ -627,6 +643,15 @@ export default function App() {
                   }`}
                 >
                   <span>Calendario & Todo</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('actas')}
+                  className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors font-medium flex items-center justify-between ${
+                    activeTab === 'actas' ? 'bg-[#EDEDEB] text-[#37352F]' : 'text-[#5A5A57] hover:bg-[#F1F1EF] hover:text-[#37352F]'
+                  }`}
+                >
+                  <span>Actas de Reunión</span>
                 </button>
               </div>
             </div>
@@ -1016,6 +1041,16 @@ export default function App() {
             </div>
           )}
 
+          {activeTab === 'actas' && (
+            <div className="animate-fade-in h-full">
+              <MeetingMinutesView 
+                meetingMinutes={meetingMinutes} 
+                onAdd={handleAddMeetingMinute} 
+                onUpdate={handleUpdateMeetingMinute} 
+                onDelete={handleDeleteMeetingMinute} 
+              />
+            </div>
+          )}
         </section>
       </main>
     </div>
