@@ -952,7 +952,7 @@ export default function WorkspaceView({
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-lg bg-gray-50 flex items-center justify-center">
-                  <Sparkles className="w-5 h-5 text-black" />
+                  <CheckSquare className="w-5 h-5 text-black" />
                 </div>
                 <div>
                   <span className="font-title-sm text-gray-900">{editingTaskId ? 'Editar Tarea' : 'Nueva Tarea'}</span>
@@ -1082,7 +1082,7 @@ export default function WorkspaceView({
                 {/* Description */}
                 <div className="pt-5 border-t border-gray-200">
                   <textarea
-                    placeholder="Añade una descripción o escríbela con IA..."
+                    placeholder="Añade una descripción..."
                     value={taskForm.description}
                     onChange={e => setTaskForm({ ...taskForm, description: e.target.value })}
                     rows={5}
@@ -1162,7 +1162,7 @@ export default function WorkspaceView({
               <div className="w-[300px] shrink-0 border-l border-gray-200 bg-gray-50 flex flex-col justify-between p-5">
                 <div className="space-y-4">
                   <button disabled={isSubmittingTask} type="submit" className={`w-full py-3 bg-black text-white rounded-lg font-label-md hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2 text-body-sm ${isSubmittingTask ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                    {isSubmittingTask ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    {isSubmittingTask ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                     {editingTaskId ? (isSubmittingTask ? 'Guardando...' : 'Guardar Cambios') : (isSubmittingTask ? 'Creando...' : 'Crear Tarea')}
                   </button>
                   <button type="button" onClick={() => setShowTaskModal(false)} className="w-full py-3 border border-gray-200 text-gray-900 rounded-lg font-label-md hover:bg-white transition-colors cursor-pointer text-body-sm">
@@ -1222,14 +1222,6 @@ export default function WorkspaceView({
               <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
                 {/* Title */}
                 <h1 className="font-display-lg text-display-lg text-gray-900 leading-tight">{detailTask.title}</h1>
-
-                {/* AI Prompt Box */}
-                <div className="flex items-center gap-3 bg-white p-4 rounded-xl border border-dashed border-gray-300">
-                  <Sparkles className="w-5 h-5 text-black shrink-0" />
-                  <p className="text-gray-500">
-                    <span className="text-black font-bold">Pregúntale a Brain²</span> una presentación, documento o prototipo
-                  </p>
-                </div>
 
                 {/* Details Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-y-5 gap-x-8">
@@ -1335,7 +1327,7 @@ export default function WorkspaceView({
                 ) : (
                   <div className="pt-5 border-t border-gray-200">
                     <p className="text-gray-400 cursor-text hover:bg-white transition-colors p-2 -mx-2 rounded">
-                      Añade una descripción o escríbela con <Sparkles className="inline w-4 h-4 text-black align-middle" /> IA
+                      Añade una descripción
                     </p>
                   </div>
                 )}
@@ -1512,9 +1504,6 @@ export default function WorkspaceView({
                           <button type="button" className="flex items-center gap-1 px-2 py-1 hover:bg-gray-50-high rounded-lg transition-colors text-label-md cursor-pointer">
                             <span>Comentario</span>
                             <ChevronRight className="w-3 h-3" />
-                          </button>
-                          <button type="button" className="p-1 hover:bg-gray-50-high rounded-lg transition-colors cursor-pointer">
-                            <Sparkles className="w-4 h-4" />
                           </button>
                           <button type="button" className="p-1 hover:bg-gray-50-high rounded-lg transition-colors cursor-pointer">
                             <Paperclip className="w-4 h-4" />
