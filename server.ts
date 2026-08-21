@@ -463,9 +463,9 @@ async function startServer() {
         };
         await dao.createNotification(n);
         broadcastToUser(uid, { type: 'notification', notification: n });
-        await sendFCMToUser(uid, 'Nueva tarea asignada', n.text, { type: 'task', taskId: task.id });
+        sendFCMToUser(uid, 'Nueva tarea asignada', n.text, { type: 'task', taskId: task.id }).catch(e => console.error(e));
         const u = users.find(u => u.id === uid);
-        await sendEmailToUser(uid, `Nueva tarea asignada: ${task.title}`,
+        sendEmailToUser(uid, `Nueva tarea asignada: ${task.title}`,
           emailTemplate({
             userName: u?.name || '',
             title: 'Nueva tarea asignada',
@@ -477,7 +477,7 @@ async function startServer() {
               { label: 'Vence', value: task.dueDate },
             ]
           })
-        );
+        ).catch(e => console.error(e));
       }
     }
     res.status(201).json(task);
@@ -514,8 +514,8 @@ async function startServer() {
       };
       await dao.createNotification(n);
       broadcastToUser(uid, { type: 'notification', notification: n });
-      await sendFCMToUser(uid, 'Tarea reasignada', n.text, { type: 'task', taskId: updated.id });
-      await sendEmailToUser(uid, `Tarea asignada: ${updated.title}`,
+      sendFCMToUser(uid, 'Tarea reasignada', n.text, { type: 'task', taskId: updated.id }).catch(e => console.error(e));
+      sendEmailToUser(uid, `Tarea asignada: ${updated.title}`,
         emailTemplate({
           userName: '',
           title: 'Tarea reasignada',
@@ -523,7 +523,7 @@ async function startServer() {
           buttonText: 'Ver en Kanban',
           buttonUrl: `${getAppUrl()}/workspace`,
         })
-      );
+      ).catch(e => console.error(e));
     }
     await dao.updateTask(req.params.id, updated);
     const statusChanged = updated.status !== original.status;
@@ -541,9 +541,9 @@ async function startServer() {
         };
         await dao.createNotification(n);
         broadcastToUser(uid, { type: 'notification', notification: n });
-        await sendFCMToUser(uid, 'Estado de tarea actualizado', n.text, { type: 'task', taskId: updated.id });
+        sendFCMToUser(uid, 'Estado de tarea actualizado', n.text, { type: 'task', taskId: updated.id }).catch(e => console.error(e));
         const u = users.find(u => u.id === uid);
-        await sendEmailToUser(uid, `Tarea actualizada: ${updated.title}`,
+        sendEmailToUser(uid, `Tarea actualizada: ${updated.title}`,
           emailTemplate({
             userName: u?.name || '',
             title: 'Estado de tarea actualizado',
@@ -551,7 +551,7 @@ async function startServer() {
             buttonText: 'Ver en Kanban',
             buttonUrl: `${appUrl}/workspace`,
           })
-        );
+        ).catch(e => console.error(e));
       }
       // Notify admins on any status change (not just done)
       const assigneeNames = newAssigned.map((uid: string) => users.find(u => u.id === uid)?.name).filter(Boolean).join(', ') || 'sin asignar';
@@ -563,9 +563,9 @@ async function startServer() {
         };
         await dao.createNotification(n);
         broadcastToUser(pm.id, { type: 'notification', notification: n });
-        await sendFCMToUser(pm.id, 'Tarea actualizada', n.text, { type: 'task', taskId: updated.id });
+        sendFCMToUser(pm.id, 'Tarea actualizada', n.text, { type: 'task', taskId: updated.id }).catch(e => console.error(e));
         const pmUser = users.find(u => u.id === pm.id);
-        await sendEmailToUser(pm.id, `Tarea actualizada: ${updated.title}`,
+        sendEmailToUser(pm.id, `Tarea actualizada: ${updated.title}`,
           emailTemplate({
             userName: pmUser?.name || '',
             title: 'Tarea actualizada',
@@ -573,7 +573,7 @@ async function startServer() {
             buttonText: 'Ver en Kanban',
             buttonUrl: `${appUrl}/workspace`,
           })
-        );
+        ).catch(e => console.error(e));
       });
     }
     res.json(updated);
@@ -614,16 +614,16 @@ async function startServer() {
         };
         await dao.createNotification(n);
         broadcastToUser(uid, { type: 'notification', notification: n });
-        await sendFCMToUser(uid, 'Nuevo comentario', n.text, { type: 'task', taskId: task.id });
-        await sendEmailToUser(uid, `Nuevo comentario: ${task.title}`,
+        sendFCMToUser(uid, 'Nuevo comentario en tarea', n.text, { type: 'task_comment', taskId: task.id }).catch(e => console.error(e));
+        sendEmailToUser(uid, `Nuevo comentario: ${task.title}`,
           emailTemplate({
-            userName: '',
-            title: 'Nuevo comentario en tarea',
+            userName: users.find(u => u.id === uid)?.name || '',
+            title: 'Nuevo comentario',
             message: `<strong>${comment.userName}</strong> comentó en <strong>${task.title}</strong>:<br/><br/><em>"${comment.text.slice(0, 200)}"</em>`,
-            buttonText: 'Ver comentario',
+            buttonText: 'Ver Tarea',
             buttonUrl: `${getAppUrl()}/workspace`,
           })
-        );
+        ).catch(e => console.error(e));
       }
     }
     res.status(201).json(comment);
@@ -697,24 +697,21 @@ async function startServer() {
         };
         await dao.createNotification(n);
         broadcastToUser(uid, { type: 'notification', notification: n });
-        await sendFCMToUser(uid, 'Nueva reunión', n.text, { type: 'task', meetingId: meeting.id });
-        const u = users.find(u => u.id === uid);
-        await sendEmailToUser(uid, `Nueva reunión: ${meeting.title}`,
+        sendFCMToUser(uid, 'Nueva reunión programada', n.text, { type: 'meeting', meetingId: meeting.id }).catch(e => console.error(e));
+        const u = users.find(user => user.id === uid);
+        sendEmailToUser(uid, `Nueva reunión: ${meeting.title}`,
           emailTemplate({
             userName: u?.name || '',
             title: 'Nueva reunión agendada',
-            message: `<strong>${creator?.name || 'Un usuario'}</strong> te ha invitado a una reunión.`,
-            buttonText: 'Ver en calendario',
+            message: `Se te ha invitado a la reunión <strong>${meeting.title}</strong> el ${meeting.date} a las ${meeting.time}.<br/><br/>${meeting.description ? `<em>${meeting.description}</em>` : ''}`,
+            buttonText: 'Ver Detalles',
             buttonUrl: `${appUrl}/calendar`,
             details: [
-              { label: 'Reunión', value: meeting.title },
-              { label: 'Fecha', value: meeting.date },
-              { label: 'Hora', value: meeting.time },
-              ...(meeting.link ? [{ label: 'Enlace', value: `<a href="${meeting.link}" style="color:#2383E2;">${meeting.link}</a>` }] : []),
-              ...(meeting.description ? [{ label: 'Nota', value: meeting.description }] : []),
+              { label: 'Fecha y Hora', value: `${meeting.date} - ${meeting.time}` },
+              { label: 'Enlace', value: meeting.link || 'Presencial' },
             ]
           })
-        );
+        ).catch(e => console.error(e));
       }
     }
     res.status(201).json(meeting);
