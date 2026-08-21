@@ -67,6 +67,7 @@ export interface Task {
   attachments?: TaskAttachment[];
   links?: TaskLink[];
   taskOrder: number;
+  commentsCount?: number;
 }
 
 export interface PersonalTodo {

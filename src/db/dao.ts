@@ -233,7 +233,7 @@ export async function updateFolder(id: string, data: Partial<Folder>): Promise<b
 
 // --- TASKS ---
 export async function listTasks(): Promise<Task[]> {
-  const rows = await executeQuery('SELECT * FROM tasks LIMIT 100000');
+  const rows = await executeQuery('SELECT t.*, (SELECT COUNT(*) FROM task_comments c WHERE c.taskId = t.id) as commentsCount FROM tasks t LIMIT 100000');
   return rows.map((r: any) => parseTaskRow(r));
 }
 
@@ -267,7 +267,8 @@ function parseTaskRow(r: any): Task {
     checklist: parseJSON(r.checklist) || [],
     attachments: parseJSON(r.attachments) || [],
     links: parseJSON(r.links) || [],
-    taskOrder: r.taskOrder ?? 0
+    taskOrder: r.taskOrder ?? 0,
+    commentsCount: r.commentsCount ? Number(r.commentsCount) : 0
   };
 }
 

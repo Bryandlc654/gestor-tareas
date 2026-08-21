@@ -11,6 +11,7 @@ import { Workspace, Folder as DBFolder, Task, User as DBUser, TaskStatus, TaskPr
 import UserAvatar from './UserAvatar';
 import { showConfirm } from '../utils/alerts';
 import SmartLinkCard, { SmartLinkLoading, SmartLinkRenderer } from './SmartLinkCard';
+import RichTextEditor from './RichTextEditor';
 import { extractUrls } from '../utils/url-utils';
 import {
   DndContext, DragOverlay, closestCenter, pointerWithin, PointerSensor, useSensor, useSensors, useDroppable,
@@ -66,13 +67,13 @@ function SortableTaskCard({ task, users, onDeleteTask, handleEditTask, setDetail
   const assignees = task.assignedTo.map(id => users.find(u => u.id === id)).filter(Boolean);
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}
-      className="p-2.5 sm:p-3.5 bg-white border border-[#EDEDEB] rounded shadow-xs hover:border-[#91918E] transition-all text-xs space-y-2.5 relative group cursor-grab active:cursor-grabbing" id={`task-card-${task.id}`}>
+      className="p-2.5 sm:p-3.5 bg-white border border-[#EDEDEB] rounded shadow-xs hover:shadow-md hover:-translate-y-0.5 hover:border-[#91918E] transition-all text-xs space-y-2.5 relative group cursor-grab active:cursor-grabbing" id={`task-card-${task.id}`}>
       <div>
         <span className={`px-1.5 py-0.5 rounded tracking-wide ${getPriorityBadge(task.priority)}`}>{task.priority}</span>
         <h4 className="font-semibold text-[#37352F] mt-2 leading-snug text-[11px] sm:text-xs">{task.title}</h4>
       </div>
       {task.description && (
-        <p className="text-[10px] sm:text-[11px] text-[#5A5A57] line-clamp-2 leading-relaxed">{task.description}</p>
+        <p className="text-[10px] sm:text-[11px] text-[#5A5A57] line-clamp-2 leading-relaxed">{task.description.replace(/<[^>]*>?/gm, '')}</p>
       )}
       {task.tags && task.tags.length > 0 && (
         <div className="flex flex-wrap gap-1">
@@ -82,9 +83,23 @@ function SortableTaskCard({ task, users, onDeleteTask, handleEditTask, setDetail
         </div>
       )}
       <div className="flex items-center justify-between pt-2 border-t border-[#EDEDEB] text-[10px] text-[#91918E]">
-        <div className="flex items-center gap-1 text-[9px] font-mono">
-          <Calendar className="w-3 h-3 text-[#91918E]" />
-          <span>{task.dueDate}</span>
+        <div className="flex items-center gap-2 text-[9px] font-mono">
+          <div className={`flex items-center gap-1 ${task.dueDate && new Date(task.dueDate) < new Date(new Date().setHours(0,0,0,0)) ? 'text-red-500 font-semibold bg-red-50 px-1 rounded' : ''}`}>
+            <Calendar className="w-3 h-3" />
+            <span>{task.dueDate}</span>
+          </div>
+          {task.checklist && task.checklist.length > 0 && (
+            <div className="flex items-center gap-1" title="Progreso del Checklist">
+              <CheckSquare className="w-3 h-3 text-[#91918E]" />
+              <span>{task.checklist.filter(i => i.done).length}/{task.checklist.length}</span>
+            </div>
+          )}
+          {task.commentsCount !== undefined && task.commentsCount > 0 && (
+            <div className="flex items-center gap-1" title="Comentarios">
+              <MessageCircle className="w-3 h-3 text-[#91918E]" />
+              <span>{task.commentsCount}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center -space-x-1.5" title={assignees.map(a => a!.name).join(', ') || 'Sin asignar'}>
           {assignees.length > 0 ? assignees.slice(0, 3).map((a) => (
@@ -266,15 +281,20 @@ export default function WorkspaceView({
     }
   };
 
+  const [isLoadingComments, setIsLoadingComments] = useState(false);
+
   // Fetch comments when task detail opens
   useEffect(() => {
     if (detailTaskId) {
+      setIsLoadingComments(true);
       fetch(`/api/tasks/${detailTaskId}/comments`)
         .then(r => r.json())
         .then(data => setTaskComments(Array.isArray(data) ? data : []))
-        .catch(() => setTaskComments([]));
+        .catch(() => setTaskComments([]))
+        .finally(() => setIsLoadingComments(false));
     } else {
       setTaskComments([]);
+      setIsLoadingComments(false);
     }
   }, [detailTaskId]);
 
@@ -1081,12 +1101,10 @@ export default function WorkspaceView({
 
                 {/* Description */}
                 <div className="pt-5 border-t border-gray-200">
-                  <textarea
+                  <RichTextEditor
                     placeholder="Añade una descripción..."
                     value={taskForm.description}
-                    onChange={e => setTaskForm({ ...taskForm, description: e.target.value })}
-                    rows={5}
-                    className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-body-md text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-black resize-none"
+                    onChange={(val) => setTaskForm({ ...taskForm, description: val })}
                   />
                 </div>
 
@@ -1097,10 +1115,10 @@ export default function WorkspaceView({
                   </h3>
                   <div className="space-y-1">
                     {taskForm.checklist.map((item, idx) => (
-                      <div key={item.id} className="flex items-center gap-3 px-3 py-2 bg-white rounded-lg">
+                      <div key={item.id} className={`flex items-center gap-3 px-3 py-2 bg-white rounded-lg transition-all duration-300 ${item.done ? 'opacity-70' : ''}`}>
                         <input type="checkbox" checked={item.done} onChange={() => { const updated = [...taskForm.checklist]; updated[idx] = { ...updated[idx], done: !updated[idx].done }; setTaskForm({ ...taskForm, checklist: updated }); }} className="w-4 h-4 accent-primary rounded cursor-pointer shrink-0" />
-                        <span className={`flex-1 text-body-sm min-w-0 ${item.done ? 'line-through text-gray-500' : 'text-gray-900'}`}>{item.text}</span>
-                        <button type="button" onClick={() => setTaskForm({ ...taskForm, checklist: taskForm.checklist.filter((_, i) => i !== idx) })} className="text-gray-500 hover:text-red-500 cursor-pointer shrink-0"><X className="w-3.5 h-3.5" /></button>
+                        <span className={`flex-1 text-body-sm min-w-0 transition-all duration-300 ${item.done ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.text}</span>
+                        <button type="button" onClick={() => setTaskForm({ ...taskForm, checklist: taskForm.checklist.filter((_, i) => i !== idx) })} className="text-gray-500 hover:text-red-500 cursor-pointer shrink-0 transition-colors"><X className="w-3.5 h-3.5" /></button>
                       </div>
                     ))}
                   </div>
@@ -1322,7 +1340,11 @@ export default function WorkspaceView({
                 {/* Description */}
                 {detailTask.description ? (
                   <div className="pt-5 border-t border-gray-200">
-                    <SmartLinkRenderer text={detailTask.description} className="text-gray-900 leading-relaxed whitespace-pre-wrap text-body-md" />
+                    {detailTask.description.includes('<p') ? (
+                      <div className="text-gray-900 leading-relaxed rich-text-content" dangerouslySetInnerHTML={{ __html: detailTask.description }} />
+                    ) : (
+                      <SmartLinkRenderer text={detailTask.description} className="text-gray-900 leading-relaxed whitespace-pre-wrap text-body-md" />
+                    )}
                   </div>
                 ) : (
                   <div className="pt-5 border-t border-gray-200">
@@ -1340,7 +1362,7 @@ export default function WorkspaceView({
                     </h3>
                     <div className="space-y-1">
                       {detailTask.checklist.map((item) => (
-                        <div key={item.id} className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg">
+                        <div key={item.id} className={`flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg transition-all duration-300 ${item.done ? 'opacity-70' : ''}`}>
                           <input
                             type="checkbox"
                             checked={item.done}
@@ -1350,9 +1372,9 @@ export default function WorkspaceView({
                               );
                               onUpdateTask(detailTask.id, { checklist: newChecklist });
                             }}
-                            className="w-4 h-4 accent-primary rounded cursor-pointer"
+                            className="w-4 h-4 accent-primary rounded cursor-pointer shrink-0"
                           />
-                          <span className={`text-body-sm min-w-0 ${item.done ? 'line-through text-gray-500' : 'text-gray-900'}`}>
+                          <span className={`text-body-sm min-w-0 transition-all duration-300 ${item.done ? 'line-through text-gray-400' : 'text-gray-900'}`}>
                             {item.text}
                           </span>
                         </div>
@@ -1441,7 +1463,19 @@ export default function WorkspaceView({
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-5">
                   {/* Comments List */}
-                  {taskComments.length === 0 ? (
+                  {isLoadingComments ? (
+                    <div className="space-y-4">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className="flex items-start gap-3 animate-pulse">
+                          <div className="w-7 h-7 bg-gray-200 rounded-full shrink-0"></div>
+                          <div className="flex-1 space-y-2 py-1">
+                            <div className="h-3 bg-gray-200 rounded w-1/4"></div>
+                            <div className="h-3 bg-gray-200 rounded w-3/4"></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : taskComments.length === 0 ? (
                     <p className="text-body-sm text-gray-500 italic">Sin comentarios aún.</p>
                   ) : (
                     taskComments.map(c => (
@@ -1453,7 +1487,11 @@ export default function WorkspaceView({
                               <span className="font-title-sm text-gray-900">{c.userName}</span>
                               <span className="text-[11px] text-gray-500">{new Date(c.timestamp).toLocaleString('es', { day: 'numeric', month: 'short' })}</span>
                             </div>
-                            <SmartLinkRenderer text={c.text} className="mt-1 text-body-md text-gray-900 leading-relaxed block" />
+                            {c.text.includes('<p') ? (
+                              <div className="mt-1 text-gray-900 leading-relaxed block rich-text-content" dangerouslySetInnerHTML={{ __html: c.text }} />
+                            ) : (
+                              <SmartLinkRenderer text={c.text} className="mt-1 text-body-md text-gray-900 leading-relaxed block" />
+                            )}
                             <div className="mt-2 flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button className="flex items-center gap-1 text-gray-500 hover:text-black cursor-pointer">
                                 <MessageCircle className="w-3.5 h-3.5" />
@@ -1488,12 +1526,10 @@ export default function WorkspaceView({
                       setSubmittingComment(false);
                     }
                   }}>
-                    <div className="relative border border-gray-200 rounded-xl p-2 focus-within:ring-2 focus-within:ring-black/20 focus-within:border-black transition-all">
-                      <textarea
+                      <RichTextEditor
                         value={newCommentText}
-                        onChange={e => setNewCommentText(e.target.value)}
+                        onChange={(val) => setNewCommentText(val)}
                         placeholder="Escribe un comentario..."
-                        className="w-full bg-transparent border-none focus:ring-0 text-body-md resize-none h-16 placeholder:text-gray-400"
                       />
                       <div className="flex items-center justify-between mt-1">
                         <div className="flex items-center gap-1 text-gray-500">
@@ -1521,7 +1557,6 @@ export default function WorkspaceView({
                           )}
                         </button>
                       </div>
-                    </div>
                   </form>
                 </footer>
               </div>
