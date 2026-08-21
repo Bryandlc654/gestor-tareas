@@ -5,7 +5,7 @@ import {
   Layers, AlertTriangle, Play, CheckSquare, Sparkles, 
   Paperclip, Link, Upload, X, FileText, Image,
   Layout, List, PanelLeft, PanelLeftClose, Eye, Download,
-  MessageCircle, BarChart3, Flag
+  MessageCircle, BarChart3, Flag, Loader2
 } from 'lucide-react';
 import { Workspace, Folder as DBFolder, Task, User as DBUser, TaskStatus, TaskPriority, TaskComment } from '../types';
 import UserAvatar from './UserAvatar';
@@ -178,6 +178,7 @@ export default function WorkspaceView({
     links: [] as TaskLink[]
   });
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [isSubmittingTask, setIsSubmittingTask] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [newChecklistText, setNewChecklistText] = useState('');
   const [newLinkTitle, setNewLinkTitle] = useState('');
@@ -342,44 +343,50 @@ export default function WorkspaceView({
 
   const handleAddTaskSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!taskForm.title.trim() || !currentFolderId) return;
-    const tagArray = taskForm.tagsInput.split(',').map(t => t.trim()).filter(Boolean);
-    if (editingTaskId) {
-      await onUpdateTask(editingTaskId, {
-        title: taskForm.title,
-        description: taskForm.description,
-        priority: taskForm.priority,
-        dueDate: taskForm.dueDate,
-        assignedTo: taskForm.assignedTo,
-        tags: tagArray,
-        checklist: taskForm.checklist,
-        attachments: taskForm.attachments,
-        links: taskForm.links
-      });
-    } else {
-      await onAddTask({
-        workspaceId: activeWorkspaceId,
-        folderId: currentFolderId,
-        title: taskForm.title,
-        description: taskForm.description,
-        status: 'todo',
-        priority: taskForm.priority,
-        dueDate: taskForm.dueDate,
-        assignedTo: taskForm.assignedTo,
-        tags: tagArray,
-        checklist: taskForm.checklist,
-        attachments: taskForm.attachments,
-        links: taskForm.links
-      });
-    }
+    if (!taskForm.title.trim() || !currentFolderId || isSubmittingTask) return;
+    setIsSubmittingTask(true);
+    
+    try {
+      const tagArray = taskForm.tagsInput.split(',').map(t => t.trim()).filter(Boolean);
+      if (editingTaskId) {
+        await onUpdateTask(editingTaskId, {
+          title: taskForm.title,
+          description: taskForm.description,
+          priority: taskForm.priority,
+          dueDate: taskForm.dueDate,
+          assignedTo: taskForm.assignedTo,
+          tags: tagArray,
+          checklist: taskForm.checklist,
+          attachments: taskForm.attachments,
+          links: taskForm.links
+        });
+      } else {
+        await onAddTask({
+          workspaceId: activeWorkspaceId,
+          folderId: currentFolderId,
+          title: taskForm.title,
+          description: taskForm.description,
+          status: 'todo',
+          priority: taskForm.priority,
+          dueDate: taskForm.dueDate,
+          assignedTo: taskForm.assignedTo,
+          tags: tagArray,
+          checklist: taskForm.checklist,
+          attachments: taskForm.attachments,
+          links: taskForm.links
+        });
+      }
 
-    setShowTaskModal(false);
-    setEditingTaskId(null);
-    setTaskForm({
-      title: '', description: '', status: 'todo' as TaskStatus, priority: 'medium' as TaskPriority,
-      dueDate: new Date().toISOString().split('T')[0], assignedTo: [], tagsInput: '',
-      checklist: [], attachments: [], links: []
-    });
+      setShowTaskModal(false);
+      setEditingTaskId(null);
+      setTaskForm({
+        title: '', description: '', status: 'todo' as TaskStatus, priority: 'medium' as TaskPriority,
+        dueDate: new Date().toISOString().split('T')[0], assignedTo: [], tagsInput: '',
+        checklist: [], attachments: [], links: []
+      });
+    } finally {
+      setIsSubmittingTask(false);
+    }
   };
 
   const handleEditTask = (task: Task) => {
@@ -1154,9 +1161,9 @@ export default function WorkspaceView({
               {/* RIGHT: Actions sidebar */}
               <div className="w-[300px] shrink-0 border-l border-gray-200 bg-gray-50 flex flex-col justify-between p-5">
                 <div className="space-y-4">
-                  <button type="submit" className="w-full py-3 bg-black text-white rounded-lg font-label-md hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2 text-body-sm">
-                    <Sparkles className="w-4 h-4" />
-                    {editingTaskId ? 'Guardar Cambios' : 'Crear Tarea'}
+                  <button disabled={isSubmittingTask} type="submit" className={`w-full py-3 bg-black text-white rounded-lg font-label-md hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2 text-body-sm ${isSubmittingTask ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                    {isSubmittingTask ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    {editingTaskId ? (isSubmittingTask ? 'Guardando...' : 'Guardar Cambios') : (isSubmittingTask ? 'Creando...' : 'Crear Tarea')}
                   </button>
                   <button type="button" onClick={() => setShowTaskModal(false)} className="w-full py-3 border border-gray-200 text-gray-900 rounded-lg font-label-md hover:bg-white transition-colors cursor-pointer text-body-sm">
                     Cancelar
