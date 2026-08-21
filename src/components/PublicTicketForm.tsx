@@ -3,6 +3,7 @@ import {
   LifeBuoy, Send, AlertCircle, Search, MessageSquare, Plus, Trash2, Pencil, X, CheckCircle, LogIn, KeyRound, User, Mail, Calendar, Clock, Image, FileText, Paperclip
 } from 'lucide-react';
 import { SupportTicket, TicketClient, TicketComment, TicketAttachment } from '../types';
+import { showConfirm } from '../utils/alerts';
 import { SmartLinkRenderer } from './SmartLinkCard';
 
 const STORAGE_KEY = 'nbp_client_code';
@@ -199,7 +200,7 @@ export default function PublicTicketForm() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('¿Eliminar este ticket definitivamente?')) return;
+    if (!(await showConfirm('¿Eliminar este ticket definitivamente?'))) return;
     try {
       await api(`/api/tickets/${id}`, { method: 'DELETE' });
       setTickets(prev => prev.filter(t => t.id !== id));

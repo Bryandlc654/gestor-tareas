@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Workspace, Folder as DBFolder, Task, User as DBUser, TaskStatus, TaskPriority, TaskComment } from '../types';
 import UserAvatar from './UserAvatar';
+import { showConfirm } from '../utils/alerts';
 import SmartLinkCard, { SmartLinkLoading, SmartLinkRenderer } from './SmartLinkCard';
 import { extractUrls } from '../utils/url-utils';
 import {
@@ -457,8 +458,8 @@ export default function WorkspaceView({
 
               {workspaces.length > 1 && (
                 <button
-                  onClick={() => {
-                    if (confirm("¿Estás seguro de eliminar este espacio, folders y tareas asociadas?")) {
+                  onClick={async () => {
+                    if (await showConfirm("¿Estás seguro de eliminar este espacio, folders y tareas asociadas?")) {
                       onDeleteWorkspace(activeWorkspaceId);
                     }
                   }}

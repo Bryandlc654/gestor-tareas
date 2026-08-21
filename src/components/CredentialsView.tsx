@@ -4,6 +4,7 @@ import {
   ExternalLink, Database, Server, Cpu, Globe, Lock, ShieldCheck 
 } from 'lucide-react';
 import { CredentialWeb } from '../types';
+import { showConfirm, showToast } from '../utils/alerts';
 
 interface CredentialsViewProps {
   credentials: CredentialWeb[];
@@ -170,8 +171,8 @@ export default function CredentialsView({
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
                 <button
-                  onClick={() => {
-                    if (confirm("¿Estás seguro de eliminar esta clave?")) {
+                  onClick={async () => {
+                    if (await showConfirm("¿Estás seguro de eliminar esta clave?")) {
                       onDeleteCredential(cred.id);
                     }
                   }}

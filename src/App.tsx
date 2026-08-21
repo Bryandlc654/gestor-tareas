@@ -26,6 +26,7 @@ import LoginPage from './components/LoginPage';
 import { useAuth } from './contexts/AuthContext';
 import { notifySoundAndBrowser, requestNotifPermission } from './utils/notify';
 import { getFCMToken } from './firebase';
+import { ToastContainer, showToast } from './utils/alerts';
 
 export default function App() {
   const { user: authUser, token, isAuthenticated, isAuthLoading, logout } = useAuth();
@@ -243,9 +244,9 @@ export default function App() {
     } catch (e) {
       console.error("Mutative action failed: ", e);
       if (e instanceof TypeError) {
-        alert("Error de conexión con el servidor.");
+        showToast("Error de conexión con el servidor.", "error");
       } else {
-        alert("Error sincronizando cambios.");
+        showToast("Error sincronizando cambios.", "error");
       }
     }
   };
@@ -524,6 +525,7 @@ export default function App() {
     <div className="min-h-screen bg-white font-sans flex text-[#37352F] relative" id="intranet-panel">
       
       {/* Mobile overlay backdrop */}
+      <ToastContainer />
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setSidebarOpen(false)} />
       )}
@@ -569,7 +571,7 @@ export default function App() {
                 onClick={() => {
                   const url = window.location.origin + '/solicitudes';
                   navigator.clipboard.writeText(url);
-                  alert('Enlace copiado: ' + url);
+                  showToast('Enlace copiado: ' + url, 'success');
                 }}
                 className="w-full text-center py-1 bg-[#F7F7F5] border border-[#EDEDEB] text-[#5A5A57] hover:bg-[#EDEDEB] transition-colors text-[9px] font-medium rounded flex items-center justify-center gap-1 cursor-pointer mt-1"
               >

@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  LifeBuoy, CheckSquare, Plus, Clock, User, AlertCircle, 
-  Trash, MessageSquare, ChevronRight, HelpCircle, ArrowUpRight, Trash2,
-  KeyRound, Copy, Users, X, Image, FileText, Paperclip
+  Ticket, UserCircle, Search, MessageSquare, Plus, Filter, Tag, LayoutGrid, CheckCircle2,
+  List as ListIcon, Calendar, Clock, AlertCircle, X, Loader2, Send, Building2, Key, Users, User,
+  LifeBuoy, CheckSquare, Trash, ChevronRight, HelpCircle, ArrowUpRight, Trash2,
+  KeyRound, Copy, Image, FileText, Paperclip
 } from 'lucide-react';
+import UserAvatar from './UserAvatar';
+import { showToast, showConfirm } from '../utils/alerts';
 import { SupportTicket, TicketComment, TicketClient, TicketAttachment } from '../types';
 import { SmartLinkRenderer } from './SmartLinkCard';
 
@@ -53,7 +56,7 @@ export default function TicketsView({
   };
 
   const handleDeleteClient = async (id: string) => {
-    if (!confirm('¿Eliminar este cliente?')) return;
+    if (!(await showConfirm('¿Eliminar este cliente?'))) return;
     try {
       await fetch(`/api/ticket-clients/${id}`, {
         method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
@@ -64,7 +67,7 @@ export default function TicketsView({
 
   const copyCode = (code: string) => {
     navigator.clipboard.writeText(code);
-    alert('Código copiado: ' + code);
+    showToast('Código copiado: ' + code, 'success');
   };
 
   const handleSendReply = async (e: React.FormEvent) => {
