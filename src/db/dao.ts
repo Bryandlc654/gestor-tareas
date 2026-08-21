@@ -245,7 +245,7 @@ export async function createTask(data: Task): Promise<void> {
 }
 
 export async function updateTask(id: string, data: Partial<Task>): Promise<boolean> {
-  const fields = Object.keys(data).filter(k => k !== 'id');
+  const fields = Object.keys(data).filter(k => k !== 'id' && k !== 'commentsCount');
   if (!fields.length) return false;
   const sets = fields.map(f => `${f}=?`).join(',');
   const vals = fields.map(f => TASK_JSON_FIELDS.includes(f) ? JSON.stringify((data as any)[f] ?? []) : (data as any)[f]);
