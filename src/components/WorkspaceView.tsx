@@ -199,7 +199,7 @@ export default function WorkspaceView({
   const [newLinkTitle, setNewLinkTitle] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [showLinkInput, setShowLinkInput] = useState(false);
-  const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'gantt'>('kanban');
+  const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'gantt'>('list');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // DnD state
   const [activeDragTask, setActiveDragTask] = useState<Task | null>(null);
