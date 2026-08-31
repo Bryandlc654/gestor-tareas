@@ -210,56 +210,88 @@ export default function VendorReportsView({ vendorLeads, users, activeUserId, on
     });
     y += 5;
 
-    // Leads table
+    // Detailed client data
     if (y > 250) { doc.addPage(); y = 15; }
     doc.setFontSize(11);
     doc.setTextColor(55, 53, 47);
-    doc.text('DETALLE DE LEADS', 15, y);
-    y += 6;
+    doc.text('DETALLE DE CLIENTES', 15, y);
+    y += 7;
 
-    // Table header
-    doc.setFillColor(247, 247, 245);
-    doc.rect(15, y - 4, pageWidth - 30, 7, 'F');
-    doc.setFontSize(7);
-    doc.setTextColor(90, 90, 87);
-    doc.text('#', 18, y);
-    doc.text('Cliente', 26, y);
-    doc.text('Servicio', 75, y);
-    doc.text('Ciudad', 110, y);
-    doc.text('Estado', 140, y);
-    y += 6;
-
-    doc.setFontSize(7);
-    doc.setTextColor(55, 53, 47);
-    (reportData.leads || []).forEach((lead: VendorLead, i: number) => {
-      if (y > 275) { doc.addPage(); y = 15; }
-      doc.text(String(i + 1), 18, y);
-      doc.text(lead.clientName.slice(0, 25), 26, y);
-      doc.text(lead.serviceInterest.slice(0, 20), 75, y);
-      doc.text(lead.city.slice(0, 15), 110, y);
-      doc.text(STATUS_COLORS[lead.status]?.label || lead.status, 140, y);
-      y += 5;
-    });
-    y += 5;
-
-    // Activities history
-    if (y > 240) { doc.addPage(); y = 15; }
-    doc.setFontSize(11);
-    doc.text('HISTORIAL DE GESTIONES', 15, y);
-    y += 6;
-    doc.setFontSize(7);
-    (reportData.activities || []).slice(0, 60).forEach((act: VendorLeadActivity) => {
-      if (y > 275) { doc.addPage(); y = 15; }
-      const date = act.createdAt ? new Date(act.createdAt).toLocaleDateString('es-PE') : '-';
-      const typeLabel = ACTIVITY_LABELS[act.type] || act.type;
-      const leadName = reportData.leads?.find((l: VendorLead) => l.id === act.leadId)?.clientName || act.leadId;
+    const labelVal = (label: string, value: string, valueX: number) => {
+      doc.setFontSize(7);
       doc.setTextColor(145, 145, 142);
-      doc.text(date, 15, y);
+      doc.text(label, 18, y);
       doc.setTextColor(55, 53, 47);
-      doc.text(typeLabel, 35, y);
-      doc.text(leadName.slice(0, 20), 58, y);
-      doc.text(act.description.slice(0, 50), 85, y);
-      y += 4.5;
+      doc.text(value || '—', valueX, y);
+    };
+
+    const fmtDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('es-PE') : '—');
+
+    (reportData.leads || []).forEach((lead: VendorLead, i: number) => {
+      const leadActivities = (reportData.activities || []).filter((a: VendorLeadActivity) => a.leadId === lead.id);
+
+      // Section card
+      if (y > 265) { doc.addPage(); y = 15; }
+      doc.setFillColor(247, 247, 245);
+      doc.rect(15, y - 4, pageWidth - 30, 18, 'F');
+      doc.setFontSize(9);
+      doc.setTextColor(55, 53, 47);
+      doc.text(`#${i + 1} ${lead.clientName}`, 18, y);
+      const st = STATUS_COLORS[lead.status]?.label || lead.status;
+      doc.setFontSize(7);
+      doc.text(`Estado: ${st}`, pageWidth - 18, y, { align: 'right' });
+      y += 5;
+      doc.setFontSize(7);
+      doc.setTextColor(145, 145, 142);
+      doc.text(`Registrado: ${fmtDate(lead.createdAt)}`, 18, y - 1);
+      y += 5;
+
+      // Contact data rows (full width)
+      [['Teléfono', lead.phone], ['Email', lead.email], ['Servicio de interés', lead.serviceInterest], ['Ciudad', lead.city]].forEach(([lb, val]) => {
+        labelVal(lb as string, val as string, 45);
+        y += 5;
+      });
+
+      // Notes (dato relevante)
+      if (lead.notes) {
+        const notesLines = doc.splitTextToSize(`Dato relevante: ${lead.notes}`, pageWidth - 36);
+        notesLines.forEach((line: string) => {
+          if (y > 280) { doc.addPage(); y = 15; }
+          doc.setFontSize(7);
+          doc.setTextColor(145, 145, 142);
+          doc.text(line, 18, y);
+          y += 4;
+        });
+      }
+
+      // Client activities
+      if (leadActivities.length > 0) {
+        if (y > 272) { doc.addPage(); y = 15; }
+        doc.setFontSize(7);
+        doc.setTextColor(90, 90, 87);
+        doc.text('Gestiones:', 18, y);
+        y += 4;
+        leadActivities.forEach((act: VendorLeadActivity) => {
+          if (y > 280) { doc.addPage(); y = 15; }
+          const date = fmtDate(act.createdAt);
+          const typeLabel = ACTIVITY_LABELS[act.type] || act.type;
+          doc.setFontSize(7);
+          doc.setTextColor(145, 145, 142);
+          doc.text(`  • ${date}`, 18, y);
+          doc.setTextColor(90, 90, 87);
+          doc.text(typeLabel, 52, y);
+          doc.setTextColor(55, 53, 47);
+          const descLines = doc.splitTextToSize(act.description || '—', pageWidth - 60);
+          descLines[0] = `   ${descLines[0]}`;
+          descLines.forEach((line: string) => {
+            if (y > 280) { doc.addPage(); y = 15; }
+            doc.text(line, 62, y);
+            y += 4;
+          });
+          y += 1;
+        });
+      }
+      y += 5;
     });
 
     // Footer
