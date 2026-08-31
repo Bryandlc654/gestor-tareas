@@ -122,7 +122,13 @@ async function startServer() {
   const PORT = process.env.PORT || 3000;
 
   app.set('trust proxy', 1);
-  app.use(compression());
+  // Compression skips SSE: buffering would delay real-time events
+  app.use(compression({
+    filter: (req, res) => {
+      if (req.path === '/api/realtime') return false;
+      return compression.filter(req, res);
+    }
+  }));
   app.use(express.json({ limit: '5mb' }));
 
   const limiter = rateLimit({
@@ -452,35 +458,41 @@ async function startServer() {
       taskOrder: typeof req.body.taskOrder === 'number' ? req.body.taskOrder : 0
     };
     await dao.createTask(task);
-    if (task.assignedTo.length) {
-      const users = await dao.listUsers();
-      const appUrl = getAppUrl();
-      for (const uid of task.assignedTo) {
-        const n = {
-          id: genId("n-"), userId: uid,
-          text: `Nueva tarea asignada en Kanban: "${task.title}"`,
-          type: "task", read: false, timestamp: new Date().toISOString()
-        };
-        await dao.createNotification(n);
-        broadcastToUser(uid, { type: 'notification', notification: n });
-        sendFCMToUser(uid, 'Nueva tarea asignada', n.text, { type: 'task', taskId: task.id }).catch(e => console.error(e));
-        const u = users.find(u => u.id === uid);
-        sendEmailToUser(uid, `Nueva tarea asignada: ${task.title}`,
-          emailTemplate({
-            userName: u?.name || '',
-            title: 'Nueva tarea asignada',
-            message: `Se te asignó la tarea <strong>${task.title}</strong> en el tablero Kanban.`,
-            buttonText: 'Ver en Kanban',
-            buttonUrl: `${appUrl}/workspace`,
-            details: [
-              { label: 'Prioridad', value: task.priority === 'high' ? '🔴 Alta' : task.priority === 'medium' ? '🟡 Media' : '🟢 Baja' },
-              { label: 'Vence', value: task.dueDate },
-            ]
-          })
-        ).catch(e => console.error(e));
-      }
-    }
     res.status(201).json(task);
+
+    // Fire-and-forget: notifications must not block the HTTP response
+    if (task.assignedTo.length) {
+      void (async () => {
+        try {
+          const users = await dao.listUsers();
+          const appUrl = getAppUrl();
+          for (const uid of task.assignedTo) {
+            const n = {
+              id: genId("n-"), userId: uid,
+              text: `Nueva tarea asignada en Kanban: "${task.title}"`,
+              type: "task", read: false, timestamp: new Date().toISOString()
+            };
+            await dao.createNotification(n);
+            broadcastToUser(uid, { type: 'notification', notification: n });
+            sendFCMToUser(uid, 'Nueva tarea asignada', n.text, { type: 'task', taskId: task.id }).catch(e => console.error(e));
+            const u = users.find(u => u.id === uid);
+            sendEmailToUser(uid, `Nueva tarea asignada: ${task.title}`,
+              emailTemplate({
+                userName: u?.name || '',
+                title: 'Nueva tarea asignada',
+                message: `Se te asignó la tarea <strong>${task.title}</strong> en el tablero Kanban.`,
+                buttonText: 'Ver en Kanban',
+                buttonUrl: `${appUrl}/workspace`,
+                details: [
+                  { label: 'Prioridad', value: task.priority === 'high' ? '🔴 Alta' : task.priority === 'medium' ? '🟡 Media' : '🟢 Baja' },
+                  { label: 'Vence', value: task.dueDate },
+                ]
+              })
+            ).catch(e => console.error(e));
+          }
+        } catch (err) { console.error('[Notify] task assignment failed:', err); }
+      })();
+    }
   }));
 
   // Batch reorder tasks (drag-and-drop Kanban)
@@ -496,8 +508,7 @@ async function startServer() {
   }));
 
   app.put("/api/tasks/:id", asyncHandler(async (req, res) => {
-    const tasks = await dao.listTasks();
-    const original = tasks.find(t => t.id === req.params.id);
+    const original = await dao.getTaskById(req.params.id);
     if (!original) return res.status(404).json({ error: "Tarea no encontrada" });
     const updated = { ...original, ...req.body };
     if (Array.isArray(req.body.assignedTo)) {
@@ -506,77 +517,83 @@ async function startServer() {
     const oldAssigned = original.assignedTo || [];
     const newAssigned = updated.assignedTo || [];
     const added = newAssigned.filter((uid: string) => !oldAssigned.includes(uid));
-    for (const uid of added) {
-      const n = {
-        id: genId("n-"), userId: uid,
-        text: `Te asignaron la tarea: "${updated.title}"`,
-        type: "task", read: false, timestamp: new Date().toISOString()
-      };
-      await dao.createNotification(n);
-      broadcastToUser(uid, { type: 'notification', notification: n });
-      sendFCMToUser(uid, 'Tarea reasignada', n.text, { type: 'task', taskId: updated.id }).catch(e => console.error(e));
-      sendEmailToUser(uid, `Tarea asignada: ${updated.title}`,
-        emailTemplate({
-          userName: '',
-          title: 'Tarea reasignada',
-          message: `Se te asignó la tarea <strong>${updated.title}</strong>.`,
-          buttonText: 'Ver en Kanban',
-          buttonUrl: `${getAppUrl()}/workspace`,
-        })
-      ).catch(e => console.error(e));
-    }
     await dao.updateTask(req.params.id, updated);
-    const statusChanged = updated.status !== original.status;
-    if (statusChanged) {
-      const users = await dao.listUsers();
-      const appUrl = getAppUrl();
-      const statusLabels: Record<string, string> = { todo: 'Sin Empezar', in_progress: 'En Progreso', review: 'Revisión', done: 'Completada' };
-      const label = statusLabels[updated.status] || updated.status;
-      // Notify all assignees about status change
-      for (const uid of newAssigned) {
-        const n = {
-          id: genId("n-"), userId: uid,
-          text: `Tarea "${updated.title}" cambió a: ${label}`,
-          type: "task", read: false, timestamp: new Date().toISOString()
-        };
-        await dao.createNotification(n);
-        broadcastToUser(uid, { type: 'notification', notification: n });
-        sendFCMToUser(uid, 'Estado de tarea actualizado', n.text, { type: 'task', taskId: updated.id }).catch(e => console.error(e));
-        const u = users.find(u => u.id === uid);
-        sendEmailToUser(uid, `Tarea actualizada: ${updated.title}`,
-          emailTemplate({
-            userName: u?.name || '',
-            title: 'Estado de tarea actualizado',
-            message: `La tarea <strong>${updated.title}</strong> cambió a <strong>${label}</strong>.`,
-            buttonText: 'Ver en Kanban',
-            buttonUrl: `${appUrl}/workspace`,
-          })
-        ).catch(e => console.error(e));
-      }
-      // Notify admins on any status change (not just done)
-      const assigneeNames = newAssigned.map((uid: string) => users.find(u => u.id === uid)?.name).filter(Boolean).join(', ') || 'sin asignar';
-      users.filter(u => u.roleId === 'role-admin').forEach(async (pm) => {
-        const n = {
-          id: genId("n-"), userId: pm.id,
-          text: `Tarea "${updated.title}" (${assigneeNames}) cambió a: ${label}`,
-          type: "task", read: false, timestamp: new Date().toISOString()
-        };
-        await dao.createNotification(n);
-        broadcastToUser(pm.id, { type: 'notification', notification: n });
-        sendFCMToUser(pm.id, 'Tarea actualizada', n.text, { type: 'task', taskId: updated.id }).catch(e => console.error(e));
-        const pmUser = users.find(u => u.id === pm.id);
-        sendEmailToUser(pm.id, `Tarea actualizada: ${updated.title}`,
-          emailTemplate({
-            userName: pmUser?.name || '',
-            title: 'Tarea actualizada',
-            message: `La tarea <strong>${updated.title}</strong> (asignada a: ${assigneeNames}) cambió a <strong>${label}</strong>.`,
-            buttonText: 'Ver en Kanban',
-            buttonUrl: `${appUrl}/workspace`,
-          })
-        ).catch(e => console.error(e));
-      });
-    }
     res.json(updated);
+
+    // Fire-and-forget: notifications must not block the HTTP response
+    void (async () => {
+      try {
+        for (const uid of added) {
+          const n = {
+            id: genId("n-"), userId: uid,
+            text: `Te asignaron la tarea: "${updated.title}"`,
+            type: "task", read: false, timestamp: new Date().toISOString()
+          };
+          await dao.createNotification(n);
+          broadcastToUser(uid, { type: 'notification', notification: n });
+          sendFCMToUser(uid, 'Tarea reasignada', n.text, { type: 'task', taskId: updated.id }).catch(e => console.error(e));
+          sendEmailToUser(uid, `Tarea asignada: ${updated.title}`,
+            emailTemplate({
+              userName: '',
+              title: 'Tarea reasignada',
+              message: `Se te asignó la tarea <strong>${updated.title}</strong>.`,
+              buttonText: 'Ver en Kanban',
+              buttonUrl: `${getAppUrl()}/workspace`,
+            })
+          ).catch(e => console.error(e));
+        }
+        const statusChanged = updated.status !== original.status;
+        if (statusChanged) {
+          const users = await dao.listUsers();
+          const appUrl = getAppUrl();
+          const statusLabels: Record<string, string> = { todo: 'Sin Empezar', in_progress: 'En Progreso', review: 'Revisión', done: 'Completada' };
+          const label = statusLabels[updated.status] || updated.status;
+          // Notify all assignees about status change
+          for (const uid of newAssigned) {
+            const n = {
+              id: genId("n-"), userId: uid,
+              text: `Tarea "${updated.title}" cambió a: ${label}`,
+              type: "task", read: false, timestamp: new Date().toISOString()
+            };
+            await dao.createNotification(n);
+            broadcastToUser(uid, { type: 'notification', notification: n });
+            sendFCMToUser(uid, 'Estado de tarea actualizado', n.text, { type: 'task', taskId: updated.id }).catch(e => console.error(e));
+            const u = users.find(u => u.id === uid);
+            sendEmailToUser(uid, `Tarea actualizada: ${updated.title}`,
+              emailTemplate({
+                userName: u?.name || '',
+                title: 'Estado de tarea actualizado',
+                message: `La tarea <strong>${updated.title}</strong> cambió a <strong>${label}</strong>.`,
+                buttonText: 'Ver en Kanban',
+                buttonUrl: `${appUrl}/workspace`,
+              })
+            ).catch(e => console.error(e));
+          }
+          // Notify admins on any status change (not just done)
+          const assigneeNames = newAssigned.map((uid: string) => users.find(u => u.id === uid)?.name).filter(Boolean).join(', ') || 'sin asignar';
+          users.filter(u => u.roleId === 'role-admin').forEach(async (pm) => {
+            const n = {
+              id: genId("n-"), userId: pm.id,
+              text: `Tarea "${updated.title}" (${assigneeNames}) cambió a: ${label}`,
+              type: "task", read: false, timestamp: new Date().toISOString()
+            };
+            await dao.createNotification(n);
+            broadcastToUser(pm.id, { type: 'notification', notification: n });
+            sendFCMToUser(pm.id, 'Tarea actualizada', n.text, { type: 'task', taskId: updated.id }).catch(e => console.error(e));
+            const pmUser = users.find(u => u.id === pm.id);
+            sendEmailToUser(pm.id, `Tarea actualizada: ${updated.title}`,
+              emailTemplate({
+                userName: pmUser?.name || '',
+                title: 'Tarea actualizada',
+                message: `La tarea <strong>${updated.title}</strong> (asignada a: ${assigneeNames}) cambió a <strong>${label}</strong>.`,
+                buttonText: 'Ver en Kanban',
+                buttonUrl: `${appUrl}/workspace`,
+              })
+            ).catch(e => console.error(e));
+          });
+        }
+      } catch (err) { console.error('[Notify] task update failed:', err); }
+    })();
   }));
 
   app.delete("/api/tasks/:id", asyncHandler(async (req, res) => {
@@ -601,32 +618,37 @@ async function startServer() {
       timestamp: now
     };
     await dao.createTaskComment(comment);
-    // Notify task assignee about comment
-    const tasks = await dao.listTasks();
-    const task = tasks.find(t => t.id === req.params.id);
-    if (task && task.assignedTo.length) {
-      const recipients = task.assignedTo.filter(uid => uid !== comment.userId);
-      for (const uid of recipients) {
-        const n = {
-          id: genId("n-"), userId: uid,
-          text: `Nuevo comentario en "${task.title}": "${comment.text.slice(0, 80)}"`,
-          type: "task" as const, read: false, timestamp: now
-        };
-        await dao.createNotification(n);
-        broadcastToUser(uid, { type: 'notification', notification: n });
-        sendFCMToUser(uid, 'Nuevo comentario en tarea', n.text, { type: 'task_comment', taskId: task.id }).catch(e => console.error(e));
-        sendEmailToUser(uid, `Nuevo comentario: ${task.title}`,
-          emailTemplate({
-            userName: users.find(u => u.id === uid)?.name || '',
-            title: 'Nuevo comentario',
-            message: `<strong>${comment.userName}</strong> comentó en <strong>${task.title}</strong>:<br/><br/><em>"${comment.text.slice(0, 200)}"</em>`,
-            buttonText: 'Ver Tarea',
-            buttonUrl: `${getAppUrl()}/workspace`,
-          })
-        ).catch(e => console.error(e));
-      }
-    }
     res.status(201).json(comment);
+
+    // Fire-and-forget: notify assignees about comment without blocking response
+    void (async () => {
+      try {
+        const task = await dao.getTaskById(req.params.id);
+        if (task && task.assignedTo.length) {
+          const users = await dao.listUsers();
+          const recipients = task.assignedTo.filter(uid => uid !== comment.userId);
+          for (const uid of recipients) {
+            const n = {
+              id: genId("n-"), userId: uid,
+              text: `Nuevo comentario en "${task.title}": "${comment.text.slice(0, 80)}"`,
+              type: "task" as const, read: false, timestamp: now
+            };
+            await dao.createNotification(n);
+            broadcastToUser(uid, { type: 'notification', notification: n });
+            sendFCMToUser(uid, 'Nuevo comentario en tarea', n.text, { type: 'task_comment', taskId: task.id }).catch(e => console.error(e));
+            sendEmailToUser(uid, `Nuevo comentario: ${task.title}`,
+              emailTemplate({
+                userName: users.find(u => u.id === uid)?.name || '',
+                title: 'Nuevo comentario',
+                message: `<strong>${comment.userName}</strong> comentó en <strong>${task.title}</strong>:<br/><br/><em>"${comment.text.slice(0, 200)}"</em>`,
+                buttonText: 'Ver Tarea',
+                buttonUrl: `${getAppUrl()}/workspace`,
+              })
+            ).catch(e => console.error(e));
+          }
+        }
+      } catch (err) { console.error('[Notify] task comment failed:', err); }
+    })();
   }));
 
   app.delete("/api/tasks/:id/comments/:commentId", asyncHandler(async (req, res) => {
@@ -684,37 +706,41 @@ async function startServer() {
       createdAt: new Date().toISOString()
     };
     await dao.createMeeting(meeting);
-    // Notify assigned users
-    if (assignedTo.length) {
-      const users = await dao.listUsers();
-      const appUrl = getAppUrl();
-      const creator = users.find(u => u.id === meeting.userId);
-      for (const uid of assignedTo.filter(u => u !== meeting.userId)) {
-        const n = {
-          id: genId("n-"), userId: uid,
-          text: `Nueva reunión: "${meeting.title}" el ${meeting.date} a las ${meeting.time}`,
-          type: "task", read: false, timestamp: meeting.createdAt
-        };
-        await dao.createNotification(n);
-        broadcastToUser(uid, { type: 'notification', notification: n });
-        sendFCMToUser(uid, 'Nueva reunión programada', n.text, { type: 'meeting', meetingId: meeting.id }).catch(e => console.error(e));
-        const u = users.find(user => user.id === uid);
-        sendEmailToUser(uid, `Nueva reunión: ${meeting.title}`,
-          emailTemplate({
-            userName: u?.name || '',
-            title: 'Nueva reunión agendada',
-            message: `Se te ha invitado a la reunión <strong>${meeting.title}</strong> el ${meeting.date} a las ${meeting.time}.<br/><br/>${meeting.description ? `<em>${meeting.description}</em>` : ''}`,
-            buttonText: 'Ver Detalles',
-            buttonUrl: `${appUrl}/calendar`,
-            details: [
-              { label: 'Fecha y Hora', value: `${meeting.date} - ${meeting.time}` },
-              { label: 'Enlace', value: meeting.link || 'Presencial' },
-            ]
-          })
-        ).catch(e => console.error(e));
-      }
-    }
     res.status(201).json(meeting);
+
+    // Fire-and-forget: notify assigned users without blocking response
+    if (assignedTo.length) {
+      void (async () => {
+        try {
+          const users = await dao.listUsers();
+          const appUrl = getAppUrl();
+          for (const uid of assignedTo.filter(u => u !== meeting.userId)) {
+            const n = {
+              id: genId("n-"), userId: uid,
+              text: `Nueva reunión: "${meeting.title}" el ${meeting.date} a las ${meeting.time}`,
+              type: "task", read: false, timestamp: meeting.createdAt
+            };
+            await dao.createNotification(n);
+            broadcastToUser(uid, { type: 'notification', notification: n });
+            sendFCMToUser(uid, 'Nueva reunión programada', n.text, { type: 'meeting', meetingId: meeting.id }).catch(e => console.error(e));
+            const u = users.find(user => user.id === uid);
+            sendEmailToUser(uid, `Nueva reunión: ${meeting.title}`,
+              emailTemplate({
+                userName: u?.name || '',
+                title: 'Nueva reunión agendada',
+                message: `Se te ha invitado a la reunión <strong>${meeting.title}</strong> el ${meeting.date} a las ${meeting.time}.<br/><br/>${meeting.description ? `<em>${meeting.description}</em>` : ''}`,
+                buttonText: 'Ver Detalles',
+                buttonUrl: `${appUrl}/calendar`,
+                details: [
+                  { label: 'Fecha y Hora', value: `${meeting.date} - ${meeting.time}` },
+                  { label: 'Enlace', value: meeting.link || 'Presencial' },
+                ]
+              })
+            ).catch(e => console.error(e));
+          }
+        } catch (err) { console.error('[Notify] meeting failed:', err); }
+      })();
+    }
   }));
 
   app.put("/api/meetings/:id", asyncHandler(async (req, res) => {
@@ -948,38 +974,44 @@ async function startServer() {
       attachments: Array.isArray(req.body.attachments) ? req.body.attachments.slice(0, 10) : undefined
     };
     await dao.createMessage(msg);
-    // Parse @mentions and notify mentioned users
-    const allUsers = await dao.listUsers();
-    const mentionRegex = /@([\p{L}\p{M}]+)/gu;
-    let mentionMatch;
-    while ((mentionMatch = mentionRegex.exec(msg.text)) !== null) {
-      const mentionText = mentionMatch[1];
-      if (!mentionText) continue;
-      const mentionedUser = allUsers.find(u =>
-        u.name.toLowerCase().split(' ')[0] === mentionText.toLowerCase() ||
-        u.name.toLowerCase().startsWith(mentionText.toLowerCase())
-      );
-      if (mentionedUser && mentionedUser.id !== userId) {
-        const n = {
-          id: genId("n-mention-"),
-          userId: mentionedUser.id,
-          text: `${user?.name || 'Alguien'} te mencionó en el chat: "${msg.text.slice(0, 100)}"`,
-          type: "chat_mention",
-          read: false,
-          timestamp: new Date().toISOString()
-        };
-        await dao.createNotification(n);
-        broadcastToUser(mentionedUser.id, { type: 'notification', notification: n });
-        await sendFCMToUser(mentionedUser.id, 'Mención en chat', n.text, { type: 'chat_mention' });
-      }
-    }
-    // Broadcast chat message to all connected SSE clients
+    // Broadcast chat message to all connected SSE clients immediately
     const chatPayload = { type: 'chat_message', message: msg };
     sseClients.forEach(c => { try { c.res.write(`data: ${JSON.stringify(chatPayload)}\n\n`); } catch {} });
-    // Send FCM push to all connected users (except sender)
-    const fcmUserIds = [...new Set(sseClients.map(c => c.userId))].filter(uid => uid !== userId);
-    await sendFCMToMultipleUsers(fcmUserIds, `Nuevo mensaje en #${msg.channelId}`, msg.text.slice(0, 100), { type: 'chat', channelId: msg.channelId, messageId: msg.id });
     res.status(201).json(msg);
+
+    // Fire-and-forget: mentions + FCM pushes must not block the response
+    void (async () => {
+      try {
+        // Parse @mentions and notify mentioned users
+        const allUsers = await dao.listUsers();
+        const mentionRegex = /@([\p{L}\p{M}]+)/gu;
+        let mentionMatch;
+        while ((mentionMatch = mentionRegex.exec(msg.text)) !== null) {
+          const mentionText = mentionMatch[1];
+          if (!mentionText) continue;
+          const mentionedUser = allUsers.find(u =>
+            u.name.toLowerCase().split(' ')[0] === mentionText.toLowerCase() ||
+            u.name.toLowerCase().startsWith(mentionText.toLowerCase())
+          );
+          if (mentionedUser && mentionedUser.id !== userId) {
+            const n = {
+              id: genId("n-mention-"),
+              userId: mentionedUser.id,
+              text: `${user?.name || 'Alguien'} te mencionó en el chat: "${msg.text.slice(0, 100)}"`,
+              type: "chat_mention",
+              read: false,
+              timestamp: new Date().toISOString()
+            };
+            await dao.createNotification(n);
+            broadcastToUser(mentionedUser.id, { type: 'notification', notification: n });
+            sendFCMToUser(mentionedUser.id, 'Mención en chat', n.text, { type: 'chat_mention' }).catch(e => console.error(e));
+          }
+        }
+        // Send FCM push to all connected users (except sender)
+        const fcmUserIds = [...new Set(sseClients.map(c => c.userId))].filter(uid => uid !== userId);
+        await sendFCMToMultipleUsers(fcmUserIds, `Nuevo mensaje en #${msg.channelId}`, msg.text.slice(0, 100), { type: 'chat', channelId: msg.channelId, messageId: msg.id });
+      } catch (err) { console.error('[Notify] chat message failed:', err); }
+    })();
   }));
 
   app.delete("/api/messages/:id", asyncHandler(async (req, res) => {
@@ -1004,7 +1036,7 @@ async function startServer() {
     };
     await dao.createNotification(n);
     broadcastToUser(n.userId, { type: 'notification', notification: n });
-    await sendFCMToUser(n.userId, 'Notificación', n.text, { type: n.type });
+    sendFCMToUser(n.userId, 'Notificación', n.text, { type: n.type }).catch(e => console.error(e));
     res.status(201).json(n);
   }));
 
@@ -1080,23 +1112,28 @@ async function startServer() {
       }] : []
     };
     await dao.createTicket(ticket);
-    const admins = (await dao.listUsers()).filter(u => u.roleId === 'role-admin');
-    for (const admin of admins) {
-      const n = {
-        id: genId("n-ticket-") + "-" + admin.id, userId: admin.id,
-        text: `Nuevo ticket creado: "${ticket.title}" por ${ticket.creatorName}`,
-        type: "ticket", read: false, timestamp: new Date().toISOString()
-      };
-      await dao.createNotification(n);
-      broadcastToUser(admin.id, { type: 'notification', notification: n });
-      await sendFCMToUser(admin.id, 'Nuevo ticket', n.text, { type: 'ticket', ticketId: ticket.id });
-    }
     res.status(201).json(ticket);
+
+    // Fire-and-forget: notify admins without blocking response
+    void (async () => {
+      try {
+        const admins = (await dao.listUsers()).filter(u => u.roleId === 'role-admin');
+        for (const admin of admins) {
+          const n = {
+            id: genId("n-ticket-") + "-" + admin.id, userId: admin.id,
+            text: `Nuevo ticket creado: "${ticket.title}" por ${ticket.creatorName}`,
+            type: "ticket", read: false, timestamp: new Date().toISOString()
+          };
+          await dao.createNotification(n);
+          broadcastToUser(admin.id, { type: 'notification', notification: n });
+          sendFCMToUser(admin.id, 'Nuevo ticket', n.text, { type: 'ticket', ticketId: ticket.id }).catch(e => console.error(e));
+        }
+      } catch (err) { console.error('[Notify] ticket created failed:', err); }
+    })();
   }));
 
   app.post("/api/tickets/:id/comments", asyncHandler(async (req, res) => {
-    const tickets = await dao.listTickets();
-    const ticket = tickets.find(t => t.id === req.params.id);
+    const ticket = await dao.getTicketById(req.params.id);
     if (!ticket) return res.status(404).json({ error: "Ticket no encontrado" });
     const comment = {
       id: genId("c-reply-"),
@@ -1114,34 +1151,40 @@ async function startServer() {
       })) : []
     };
     await dao.addTicketComment(req.params.id, comment);
-    if (!comment.isAdmin) {
-      const admins = (await dao.listUsers()).filter(u => u.roleId === 'role-admin');
-      for (const admin of admins) {
-        const n = {
-          id: genId("n-tcom-") + "-" + admin.id, userId: admin.id,
-          text: `Nueva respuesta en ticket "${ticket.title}" de ${comment.authorName}`,
-          type: "ticket", read: false, timestamp: new Date().toISOString()
-        };
-        await dao.createNotification(n);
-        broadcastToUser(admin.id, { type: 'notification', notification: n });
-        await sendFCMToUser(admin.id, 'Nueva respuesta en ticket', n.text, { type: 'ticket', ticketId: ticket.id });
-      }
-    } else {
-      const clientUser = await dao.getUserByEmail(ticket.creatorEmail);
-      if (clientUser) {
-        const n = {
-          id: genId("n-tcom-client-"), userId: clientUser.id,
-          text: `Una respuesta administrativa ha sido añadida a tu ticket: "${ticket.title}"`,
-          type: "ticket", read: false, timestamp: new Date().toISOString()
-        };
-        await dao.createNotification(n);
-        broadcastToUser(clientUser.id, { type: 'notification', notification: n });
-        await sendFCMToUser(clientUser.id, 'Respuesta administrativa', n.text, { type: 'ticket', ticketId: ticket.id });
-      }
-    }
-    const updatedComments = await dao.getTicketComments(req.params.id);
-    ticket.comments = updatedComments;
+    // Return full ticket with comment appended locally (no extra DB roundtrip)
+    ticket.comments = [...ticket.comments, comment];
     res.json(ticket);
+
+    // Fire-and-forget: notify without blocking response
+    void (async () => {
+      try {
+        if (!comment.isAdmin) {
+          const admins = (await dao.listUsers()).filter(u => u.roleId === 'role-admin');
+          for (const admin of admins) {
+            const n = {
+              id: genId("n-tcom-") + "-" + admin.id, userId: admin.id,
+              text: `Nueva respuesta en ticket "${ticket.title}" de ${comment.authorName}`,
+              type: "ticket", read: false, timestamp: new Date().toISOString()
+            };
+            await dao.createNotification(n);
+            broadcastToUser(admin.id, { type: 'notification', notification: n });
+            sendFCMToUser(admin.id, 'Nueva respuesta en ticket', n.text, { type: 'ticket', ticketId: ticket.id }).catch(e => console.error(e));
+          }
+        } else {
+          const clientUser = await dao.getUserByEmail(ticket.creatorEmail);
+          if (clientUser) {
+            const n = {
+              id: genId("n-tcom-client-"), userId: clientUser.id,
+              text: `Una respuesta administrativa ha sido añadida a tu ticket: "${ticket.title}"`,
+              type: "ticket", read: false, timestamp: new Date().toISOString()
+            };
+            await dao.createNotification(n);
+            broadcastToUser(clientUser.id, { type: 'notification', notification: n });
+            sendFCMToUser(clientUser.id, 'Respuesta administrativa', n.text, { type: 'ticket', ticketId: ticket.id }).catch(e => console.error(e));
+          }
+        }
+      } catch (err) { console.error('[Notify] ticket comment failed:', err); }
+    })();
   }));
 
   // Helper: resolve client from request header
@@ -1204,8 +1247,7 @@ async function startServer() {
     const client = await resolveClient(req);
     const ticketId = req.params.id;
     if (client) {
-      const allTickets = await dao.listTickets();
-      const ticket = allTickets.find(t => t.id === ticketId);
+      const ticket = await dao.getTicketById(ticketId);
       if (!ticket || ticket.clientId !== client.id) return res.status(403).json({ error: "No puedes editar este ticket" });
       const allowed = ['title', 'description', 'priority', 'category'];
       const safeBody: any = {};
@@ -1226,8 +1268,7 @@ async function startServer() {
     const client = await resolveClient(req);
     const ticketId = req.params.id;
     if (client) {
-      const allTickets = await dao.listTickets();
-      const ticket = allTickets.find(t => t.id === ticketId);
+      const ticket = await dao.getTicketById(ticketId);
       if (!ticket || ticket.clientId !== client.id) return res.status(403).json({ error: "No puedes eliminar este ticket" });
       await dao.deleteTicket(ticketId);
       return res.json({ success: true });
@@ -1797,6 +1838,171 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
     }
   });
 
+  // --- VENDOR LEADS & ACTIVITIES ---
+  function getVendorId(req: express.Request): string | null {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith('Bearer ')) return null;
+    try {
+      const payload = jwt.verify(auth.slice(7), JWT_SECRET) as any;
+      return payload.userId || payload.id || null;
+    } catch { return null; }
+  }
+
+  function isAdminUser(req: express.Request): boolean {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith('Bearer ')) return false;
+    try {
+      const payload = jwt.verify(auth.slice(7), JWT_SECRET) as any;
+      return payload.roleId === 'role-admin' || payload.roleId === 'role-superadmin';
+    } catch { return false; }
+  }
+
+  // List vendor leads (admin: all, vendor: only own)
+  app.get("/api/vendor-leads", asyncHandler(async (req, res) => {
+    const vendorId = getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const admin = isAdminUser(req);
+    const leads = await dao.listVendorLeads(admin ? undefined : vendorId);
+    res.json(leads);
+  }));
+
+  // Get single vendor lead
+  app.get("/api/vendor-leads/:id", asyncHandler(async (req, res) => {
+    const vendorId = getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const lead = await dao.getVendorLeadById(req.params.id);
+    if (!lead) return res.status(404).json({ error: "Lead no encontrado" });
+    if (!isAdminUser(req) && lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    res.json(lead);
+  }));
+
+  // Create vendor lead
+  app.post("/api/vendor-leads", asyncHandler(async (req, res) => {
+    const vendorId = getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const now = new Date().toISOString();
+    const lead = {
+      id: `vl-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+      vendorId,
+      clientName: String(req.body.clientName || '').trim(),
+      phone: String(req.body.phone || '').trim(),
+      serviceInterest: String(req.body.serviceInterest || '').trim(),
+      city: String(req.body.city || '').trim(),
+      email: String(req.body.email || '').trim(),
+      notes: String(req.body.notes || '').trim(),
+      status: ['pending', 'contacted', 'proposal', 'negotiation', 'won', 'lost'].includes(req.body.status) ? req.body.status : 'pending',
+      createdAt: now,
+      updatedAt: now
+    };
+    if (!lead.clientName) return res.status(400).json({ error: "Nombre del cliente es obligatorio" });
+    await dao.createVendorLead(lead);
+    res.status(201).json(lead);
+  }));
+
+  // Update vendor lead
+  app.put("/api/vendor-leads/:id", asyncHandler(async (req, res) => {
+    const vendorId = getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const existing = await dao.getVendorLeadById(req.params.id);
+    if (!existing) return res.status(404).json({ error: "Lead no encontrado" });
+    if (!isAdminUser(req) && existing.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    const updates: any = { ...req.body, updatedAt: new Date().toISOString() };
+    delete updates.id;
+    delete updates.vendorId;
+    await dao.updateVendorLead(req.params.id, updates);
+    res.json({ ...existing, ...updates });
+  }));
+
+  // Delete vendor lead
+  app.delete("/api/vendor-leads/:id", asyncHandler(async (req, res) => {
+    const vendorId = getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const existing = await dao.getVendorLeadById(req.params.id);
+    if (!existing) return res.status(404).json({ error: "Lead no encontrado" });
+    if (!isAdminUser(req) && existing.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    await dao.deleteVendorLead(req.params.id);
+    res.json({ success: true });
+  }));
+
+  // List activities for a lead
+  app.get("/api/vendor-leads/:id/activities", asyncHandler(async (req, res) => {
+    const vendorId = getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const lead = await dao.getVendorLeadById(req.params.id);
+    if (!lead) return res.status(404).json({ error: "Lead no encontrado" });
+    if (!isAdminUser(req) && lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    const activities = await dao.listVendorActivities(req.params.id);
+    res.json(activities);
+  }));
+
+  // Create activity for a lead
+  app.post("/api/vendor-leads/:id/activities", asyncHandler(async (req, res) => {
+    const vendorId = getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const lead = await dao.getVendorLeadById(req.params.id);
+    if (!lead) return res.status(404).json({ error: "Lead no encontrado" });
+    if (!isAdminUser(req) && lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    const activity = {
+      id: `va-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+      leadId: req.params.id,
+      vendorId,
+      type: ['call', 'meeting', 'email', 'whatsapp', 'visit', 'other'].includes(req.body.type) ? req.body.type : 'other',
+      description: String(req.body.description || '').trim(),
+      createdAt: new Date().toISOString()
+    };
+    await dao.createVendorActivity(activity);
+    // Auto-update lead status to 'contacted' if still pending after first activity
+    if (lead.status === 'pending') {
+      await dao.updateVendorLead(lead.id, { status: 'contacted', updatedAt: new Date().toISOString() });
+    }
+    res.status(201).json(activity);
+  }));
+
+  // Report endpoint: aggregated data for PDF generation
+  app.get("/api/vendor-leads/report", asyncHandler(async (req, res) => {
+    const vendorId = getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const targetVendorId = isAdminUser(req) ? (req.query.vendorId as string || undefined) : vendorId;
+    const from = req.query.from as string || undefined;
+    const to = req.query.to as string || undefined;
+
+    const leads = await dao.listVendorLeads(targetVendorId);
+    const activities = await dao.listVendorActivities(undefined, targetVendorId, from, to);
+
+    // Filter leads that have activities in range, or all if no range specified
+    let filteredLeads = leads;
+    if (from || to) {
+      const leadIdsWithActivity = new Set(activities.map(a => a.leadId));
+      filteredLeads = leads.filter(l => leadIdsWithActivity.has(l.id));
+    }
+
+    // Count by status
+    const byStatus: Record<string, number> = { pending: 0, contacted: 0, proposal: 0, negotiation: 0, won: 0, lost: 0 };
+    for (const l of leads) { byStatus[l.status] = (byStatus[l.status] || 0) + 1; }
+
+    // Count by activity type
+    const byActivityType: Record<string, number> = { call: 0, meeting: 0, email: 0, whatsapp: 0, visit: 0, other: 0 };
+    for (const a of activities) { byActivityType[a.type] = (byActivityType[a.type] || 0) + 1; }
+
+    const won = byStatus.won || 0;
+    const total = leads.length || 1;
+    const conversionRate = `${Math.round((won / total) * 100)}%`;
+
+    res.json({
+      vendor: targetVendorId ? { id: targetVendorId } : null,
+      dateRange: { from: from || null, to: to || null },
+      summary: {
+        totalLeads: leads.length,
+        totalActivities: activities.length,
+        byStatus,
+        byActivityType,
+        conversionRate
+      },
+      leads: filteredLeads,
+      activities
+    });
+  }));
+
   // Error handler global
   app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error('[Error]', err?.message || err);
@@ -1805,9 +2011,18 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
 
   // --- STATIC / VITE ---
   // Serve uploads BEFORE SPA catch-all to prevent index.html interception
+  // Long-lived cache: uploaded files are immutable (unique filename per upload)
   const uploadsDir = path.join(process.cwd(), 'uploads');
   if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-  app.use('/uploads', express.static(uploadsDir));
+  app.use('/uploads', express.static(uploadsDir, {
+    maxAge: '7d',
+    immutable: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+      }
+    }
+  }));
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -1864,6 +2079,11 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server is running at http://localhost:${PORT}`);
   });
+  // Hardening: drop slow/stalled connections so sockets never pile up
+  server.headersTimeout = 65000;
+  server.requestTimeout = 60000;
+  server.keepAliveTimeout = 61000;
+  server.maxHeadersCount = 100;
 
   const shutdown = () => {
     console.log("\n[Server] Apagando servidor...");

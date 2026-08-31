@@ -13,10 +13,18 @@ const config = {
   user: process.env.MYSQL_USER || 'root',
   password: process.env.MYSQL_PASSWORD || '',
   database: process.env.MYSQL_DATABASE || 'agency_db',
-  connectionLimit: 10,
+  connectionLimit: parseInt(process.env.MYSQL_POOL_LIMIT || '10'),
+  // Hardening: never let the event loop hang on a dead DB connection
+  waitForConnections: true,
+  queueLimit: 50,
+  connectTimeout: 10000,
   enableKeepAlive: true,
-  keepAliveInitialDelay: 0
+  keepAliveInitialDelay: 0,
+  maxIdle: 10,
+  idleTimeout: 60000
 };
+
+const QUERY_TIMEOUT_MS = parseInt(process.env.MYSQL_QUERY_TIMEOUT || '15000');
 
 let pool: mysql.Pool | null = null;
 
@@ -36,13 +44,27 @@ export function getMysqlPool(): mysql.Pool | null {
   return pool;
 }
 
-// Safe query runner
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`[MySQL] Query timeout after ${ms}ms: ${label.slice(0, 80)}`)), ms);
+    promise.then(
+      v => { clearTimeout(timer); resolve(v); },
+      e => { clearTimeout(timer); reject(e); }
+    );
+  });
+}
+
+// Safe query runner with timeout guard
 export async function executeQuery<T>(sql: string, params: any[] = []): Promise<any> {
   const connectionPool = getMysqlPool();
   if (!connectionPool) {
     throw new Error('MySQL is not enabled or pool is uninitialized. Check USE_MYSQL variable.');
   }
-  const [results] = await connectionPool.execute(sql, params);
+  const [results] = await withTimeout(
+    connectionPool.execute(sql, params),
+    QUERY_TIMEOUT_MS,
+    sql
+  );
   return results;
 }
 
@@ -357,7 +379,59 @@ export async function bootstrapMysqlSchema(): Promise<void> {
         createdAt VARCHAR(100)
       );
     `);
+
+    // 20. Vendor Leads
+    await executeQuery(`
+      CREATE TABLE IF NOT EXISTS vendor_leads (
+        id VARCHAR(255) PRIMARY KEY,
+        vendorId VARCHAR(255) NOT NULL,
+        clientName VARCHAR(255) NOT NULL,
+        phone VARCHAR(100),
+        serviceInterest VARCHAR(255),
+        city VARCHAR(255),
+        email VARCHAR(255),
+        notes TEXT,
+        status VARCHAR(50) DEFAULT 'pending',
+        createdAt VARCHAR(100),
+        updatedAt VARCHAR(100)
+      );
+    `);
+
+    // 21. Vendor Lead Activities (gestiones)
+    await executeQuery(`
+      CREATE TABLE IF NOT EXISTS vendor_activities (
+        id VARCHAR(255) PRIMARY KEY,
+        leadId VARCHAR(255) NOT NULL,
+        vendorId VARCHAR(255) NOT NULL,
+        type VARCHAR(50) NOT NULL,
+        description TEXT,
+        createdAt VARCHAR(100)
+      );
+    `);
     console.log('[MySQL] Auto-migration schema successfully validated & created.');
+
+    // Performance indexes on FK / filter columns (idempotent via try/catch)
+    const indexStatements: Array<[string, string]> = [
+      ['idx_tasks_workspace', 'ALTER TABLE tasks ADD INDEX idx_tasks_workspace (workspaceId)'],
+      ['idx_tasks_folder', 'ALTER TABLE tasks ADD INDEX idx_tasks_folder (folderId)'],
+      ['idx_folders_workspace', 'ALTER TABLE folders ADD INDEX idx_folders_workspace (workspaceId)'],
+      ['idx_chat_messages_channel', 'ALTER TABLE chat_messages ADD INDEX idx_chat_messages_channel (channelId)'],
+      ['idx_notifications_user', 'ALTER TABLE notifications ADD INDEX idx_notifications_user (userId)'],
+      ['idx_task_comments_task', 'ALTER TABLE task_comments ADD INDEX idx_task_comments_task (taskId)'],
+      ['idx_ticket_comments_ticket', 'ALTER TABLE ticket_comments ADD INDEX idx_ticket_comments_ticket (ticketId)'],
+      ['idx_support_tickets_client', 'ALTER TABLE support_tickets ADD INDEX idx_support_tickets_client (clientId)'],
+      ['idx_support_tickets_created', 'ALTER TABLE support_tickets ADD INDEX idx_support_tickets_created (createdAt)'],
+      ['idx_personal_todos_user', 'ALTER TABLE personal_todos ADD INDEX idx_personal_todos_user (userId)'],
+      ['idx_fcm_tokens_user', 'ALTER TABLE fcm_tokens ADD INDEX idx_fcm_tokens_user (userId)'],
+      ['idx_vendor_leads_vendor', 'ALTER TABLE vendor_leads ADD INDEX idx_vendor_leads_vendor (vendorId)'],
+      ['idx_vendor_activities_lead', 'ALTER TABLE vendor_activities ADD INDEX idx_vendor_activities_lead (leadId)'],
+      ['idx_vendor_activities_vendor', 'ALTER TABLE vendor_activities ADD INDEX idx_vendor_activities_vendor (vendorId)'],
+    ];
+    for (const [name, stmt] of indexStatements) {
+      try { await executeQuery(stmt); } catch { /* already exists or column missing */ }
+    }
+    console.log('[MySQL] Performance indexes ensured.');
+
     await seedIfEmpty();
     await seedCredentialsIfEmpty();
   } catch (error) {

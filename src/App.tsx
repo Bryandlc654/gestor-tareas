@@ -8,7 +8,7 @@ import UserAvatar from './components/UserAvatar';
 import { 
   User, Role, Workspace, Folder as DBFolder, Task, TaskStatus, PersonalTodo, Meeting, Client, 
   Quote, Contract, Service, CredentialWeb, ChatChannel, 
-  ChatMessage, MessageAttachment, Notification, SupportTicket, MeetingMinute
+  ChatMessage, MessageAttachment, Notification, SupportTicket, MeetingMinute, VendorLead
 } from './types';
 
 // Component view imports
@@ -24,6 +24,7 @@ import PublicTicketForm from './components/PublicTicketForm';
 import AIAssistantView from './components/AIAssistantView';
 import LoginPage from './components/LoginPage';
 import MeetingMinutesView from './components/MeetingMinutesView';
+import VendorReportsView from './components/VendorReportsView';
 import { useAuth } from './contexts/AuthContext';
 import { notifySoundAndBrowser, requestNotifPermission } from './utils/notify';
 import { getFCMToken } from './firebase';
@@ -34,7 +35,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<
     'dashboard' | 'pipeline' | 'workspaces' | 'credentials' | 
-    'chat' | 'tickets' | 'rbac' | 'agency' | 'calendar' | 'public_portal' | 'assistant' | 'actas'
+    'chat' | 'tickets' | 'rbac' | 'agency' | 'calendar' | 'public_portal' | 'assistant' | 'actas' | 'vendor_reports'
   >((sessionStorage.getItem('nbp_activeTab') as any) || 'dashboard');
 
   const [isLoading, setIsLoading] = useState(true);
@@ -59,6 +60,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [meetingMinutes, setMeetingMinutes] = useState<MeetingMinute[]>([]);
+  const [vendorLeads, setVendorLeads] = useState<VendorLead[]>([]);
 
   // Mode Selection: Portal público vs. Intranet Interna
   const isPublicPath = window.location.pathname === '/solicitudes';
@@ -118,6 +120,10 @@ export default function App() {
       setChatChannels(Array.isArray(resChans) ? resChans : []);
       setTickets(Array.isArray(resTickets) ? resTickets : []);
       setMeetingMinutes(Array.isArray(resMinutes) ? resMinutes : []);
+
+      // Vendor Leads
+      const resVendorLeads = await safeFetch('/api/vendor-leads');
+      setVendorLeads(Array.isArray(resVendorLeads) ? resVendorLeads : []);
 
       // Fetch notifications relative to authenticated user
       if (activeUserId) {
@@ -471,6 +477,20 @@ export default function App() {
     setMeetingMinutes(prev => prev.filter(m => m.id !== id));
   };
 
+  // Vendor Leads CRUD
+  const handleAddVendorLead = async (lead: Partial<VendorLead>) => {
+    const data = await callApi('/api/vendor-leads', 'POST', lead);
+    if (data) setVendorLeads(prev => [data, ...prev]);
+  };
+  const handleUpdateVendorLead = async (id: string, lead: Partial<VendorLead>) => {
+    const data = await callApi(`/api/vendor-leads/${id}`, 'PUT', lead);
+    if (data) setVendorLeads(prev => prev.map(l => l.id === id ? data : l));
+  };
+  const handleDeleteVendorLead = async (id: string) => {
+    await callApi(`/api/vendor-leads/${id}`, 'DELETE');
+    setVendorLeads(prev => prev.filter(l => l.id !== id));
+  };
+
   // Mark notifications locally without refetch
   const handleMarkAllNotifications = async () => {
     if (!activeUserId) return;
@@ -619,6 +639,17 @@ export default function App() {
                   }`}
                 >
                   <span>CRM / Ventas</span>
+                </button>
+                )}
+
+                {hasPermission('manage_crm') && (
+                <button
+                  onClick={() => setActiveTab('vendor_reports')}
+                  className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors font-medium flex items-center justify-between ${
+                    activeTab === 'vendor_reports' ? 'bg-[#EDEDEB] text-[#37352F]' : 'text-[#5A5A57] hover:bg-[#F1F1EF] hover:text-[#37352F]'
+                  }`}
+                >
+                  <span>Reportes Vendedores</span>
                 </button>
                 )}
 
@@ -873,6 +904,27 @@ export default function App() {
                   <ShieldAlert className="w-8 h-8 text-red-500 animate-pulse" />
                   <span className="font-bold text-neutral-800">Acceso Comercial Restringido por RBAC</span>
                   <span className="text-xs">Asigna a tu usuario activo un rol con permisos CRM (ej. Administrador / CEO) para acceder a reportes e ingresos.</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'vendor_reports' && (
+            <div className="animate-fade-in">
+              {hasPermission('manage_crm') ? (
+                <VendorReportsView
+                  vendorLeads={vendorLeads}
+                  users={users}
+                  activeUserId={activeUserId}
+                  onAdd={handleAddVendorLead}
+                  onUpdate={handleUpdateVendorLead}
+                  onDelete={handleDeleteVendorLead}
+                />
+              ) : (
+                <div className="p-12 text-center text-neutral-500 flex flex-col items-center justify-center gap-1 border border-dashed rounded-lg bg-white">
+                  <ShieldAlert className="w-8 h-8 text-red-500 animate-pulse" />
+                  <span className="font-bold text-neutral-800">Acceso Restringido</span>
+                  <span className="text-xs">Se requiere permisos CRM para acceder a Reportes de Vendedores.</span>
                 </div>
               )}
             </div>

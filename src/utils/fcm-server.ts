@@ -60,8 +60,6 @@ export async function sendFCMToUser(userId: string, title: string, body: string,
 }
 
 export async function sendFCMToMultipleUsers(userIds: string[], title: string, body: string, data?: Record<string, string>) {
-  if (!fcmInitialized) return;
-  for (const uid of userIds) {
-    await sendFCMToUser(uid, title, body, data);
-  }
+  if (!fcmInitialized || userIds.length === 0) return;
+  await Promise.all(userIds.map(uid => sendFCMToUser(uid, title, body, data).catch(e => console.error('[FCM] send failed:', e))));
 }

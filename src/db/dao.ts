@@ -4,10 +4,51 @@ import type {
   User, Role, Workspace, Folder, Task, PersonalTodo, Meeting, Client,
   Quote, Contract, Service, CredentialWeb, ChatChannel,
   ChatMessage, Notification, SupportTicket, TicketComment, TicketClient,
-  PortfolioItem, AgencyInfo, TaskComment, FCMToken, MeetingMinute
+  PortfolioItem, AgencyInfo, TaskComment, FCMToken, MeetingMinute,
+  VendorLead, VendorLeadActivity
 } from '../types';
 
 const CACHE_PREFIX = 'dao:';
+
+// --- IN-MEMORY TTL CACHE (works without Redis; protects DB from repeated identical reads) ---
+const MEM_TTL_MS = parseInt(process.env.MEM_CACHE_TTL || '30', 10) * 1000;
+const MEM_CACHE_MAX = 200;
+const memCache = new Map<string, { value: unknown; expires: number }>();
+
+function memGet<T>(key: string): T | null {
+  const entry = memCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expires) { memCache.delete(key); return null; }
+  return entry.value as T;
+}
+
+function memSet(key: string, value: unknown): void {
+  if (memCache.size >= MEM_CACHE_MAX) {
+    const oldest = memCache.keys().next().value;
+    if (oldest !== undefined) memCache.delete(oldest);
+  }
+  memCache.set(key, { value, expires: Date.now() + MEM_TTL_MS });
+}
+
+function memDel(key: string): void { memCache.delete(key); }
+
+async function cachedList<T>(entity: string, loader: () => Promise<T[]>): Promise<T[]> {
+  const key = cacheKey(entity);
+  const fromMem = memGet<T[]>(key);
+  if (fromMem) return fromMem;
+  const fromRedis = await cacheGet<T[]>(key);
+  if (fromRedis) { memSet(key, fromRedis); return fromRedis; }
+  const items = await loader();
+  await cacheSet(key, items);
+  memSet(key, items);
+  return items;
+}
+
+async function invalidateList(entity: string): Promise<void> {
+  const key = cacheKey(entity);
+  memDel(key);
+  await cacheDel(key);
+}
 
 function cacheKey(entity: string, id?: string): string {
   return `${CACHE_PREFIX}${entity}${id ? ':' + id : ''}`;
@@ -133,8 +174,10 @@ export async function deleteRole(id: string): Promise<boolean> {
 
 // --- USERS ---
 export async function listUsers(): Promise<User[]> {
-  const rows = await executeQuery('SELECT id,name,email,password,roleId,avatar,status FROM users LIMIT 100000');
-  return rows.map((r: any) => ({ id: r.id, name: r.name, email: r.email, password: r.password, roleId: r.roleId, avatar: r.avatar, status: r.status }));
+  return cachedList<User>('users', async () => {
+    const rows = await executeQuery('SELECT id,name,email,password,roleId,avatar,status FROM users LIMIT 100000');
+    return rows.map((r: any) => ({ id: r.id, name: r.name, email: r.email, password: r.password, roleId: r.roleId, avatar: r.avatar, status: r.status }));
+  });
 }
 
 export async function getUserByEmail(email: string): Promise<User | null> {
@@ -154,6 +197,7 @@ export async function getUserById(id: string): Promise<User | null> {
 export async function createUser(data: User): Promise<void> {
   await executeQuery('INSERT INTO users (id,name,email,password,roleId,avatar,status) VALUES (?,?,?,?,?,?,?)',
     [data.id, data.name, data.email, data.password, data.roleId, data.avatar, data.status]);
+  await invalidateList('users');
 }
 
 export async function updateUser(id: string, data: Partial<User>): Promise<boolean> {
@@ -163,11 +207,13 @@ export async function updateUser(id: string, data: Partial<User>): Promise<boole
   const vals = fields.map(f => (data as any)[f]);
   vals.push(id);
   const result = await executeQuery(`UPDATE users SET ${sets} WHERE id=?`, vals);
+  await invalidateList('users');
   return result.affectedRows > 0;
 }
 
 export async function deleteUser(id: string): Promise<boolean> {
   const result = await executeQuery('DELETE FROM users WHERE id=?', [id]);
+  await invalidateList('users');
   return result.affectedRows > 0;
 }
 
@@ -204,6 +250,7 @@ export async function deleteWorkspace(id: string): Promise<void> {
   await executeQuery('DELETE FROM folders WHERE workspaceId=?', [id]);
   await executeQuery('DELETE FROM workspaces WHERE id=?', [id]);
   await cacheDelPattern(cacheKey('*'));
+  for (const k of Array.from(memCache.keys())) memCache.delete(k);
 }
 
 // --- FOLDERS ---
@@ -219,6 +266,7 @@ export async function createFolder(data: Folder): Promise<void> {
 export async function deleteFolder(id: string): Promise<void> {
   await executeQuery('DELETE FROM tasks WHERE folderId=?', [id]);
   await executeQuery('DELETE FROM folders WHERE id=?', [id]);
+  await invalidateList('tasks');
 }
 
 export async function updateFolder(id: string, data: Partial<Folder>): Promise<boolean> {
@@ -233,8 +281,16 @@ export async function updateFolder(id: string, data: Partial<Folder>): Promise<b
 
 // --- TASKS ---
 export async function listTasks(): Promise<Task[]> {
-  const rows = await executeQuery('SELECT t.*, (SELECT COUNT(*) FROM task_comments c WHERE c.taskId = t.id) as commentsCount FROM tasks t LIMIT 100000');
-  return rows.map((r: any) => parseTaskRow(r));
+  return cachedList<Task>('tasks', async () => {
+    const rows = await executeQuery('SELECT * FROM tasks LIMIT 100000');
+    return rows.map((r: any) => parseTaskRow(r));
+  });
+}
+
+export async function getTaskById(id: string): Promise<Task | null> {
+  const rows = await executeQuery('SELECT * FROM tasks WHERE id=? LIMIT 1', [id]);
+  if (!rows.length) return null;
+  return parseTaskRow(rows[0]);
 }
 
 const TASK_JSON_FIELDS = ['tags', 'checklist', 'attachments', 'links', 'assignedTo'];
@@ -242,6 +298,7 @@ const TASK_JSON_FIELDS = ['tags', 'checklist', 'attachments', 'links', 'assigned
 export async function createTask(data: Task): Promise<void> {
   await executeQuery('INSERT INTO tasks (id,folderId,workspaceId,title,description,status,priority,dueDate,assignedTo,tags,checklist,attachments,links,taskOrder) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
     [data.id, data.folderId, data.workspaceId, data.title, data.description, data.status, data.priority, data.dueDate, JSON.stringify(data.assignedTo ?? []), JSON.stringify(data.tags ?? []), JSON.stringify(data.checklist ?? []), JSON.stringify(data.attachments ?? []), JSON.stringify(data.links ?? []), data.taskOrder ?? 0]);
+  await invalidateList('tasks');
 }
 
 export async function updateTask(id: string, data: Partial<Task>): Promise<boolean> {
@@ -251,6 +308,7 @@ export async function updateTask(id: string, data: Partial<Task>): Promise<boole
   const vals = fields.map(f => TASK_JSON_FIELDS.includes(f) ? JSON.stringify((data as any)[f] ?? []) : (data as any)[f]);
   vals.push(id);
   const result = await executeQuery(`UPDATE tasks SET ${sets} WHERE id=?`, vals);
+  await invalidateList('tasks');
   return result.affectedRows > 0;
 }
 
@@ -274,16 +332,20 @@ function parseTaskRow(r: any): Task {
 
 export async function deleteTask(id: string): Promise<void> {
   await executeQuery('DELETE FROM tasks WHERE id=?', [id]);
+  await invalidateList('tasks');
 }
 
 // --- PERSONAL TODOS ---
 export async function listTodos(): Promise<PersonalTodo[]> {
-  const rows = await executeQuery('SELECT * FROM personal_todos LIMIT 100000');
-  return rows.map((r: any) => ({ id: r.id, userId: r.userId, title: r.title, status: r.status }));
+  return cachedList<PersonalTodo>('todos', async () => {
+    const rows = await executeQuery('SELECT * FROM personal_todos LIMIT 100000');
+    return rows.map((r: any) => ({ id: r.id, userId: r.userId, title: r.title, status: r.status }));
+  });
 }
 
 export async function createTodo(data: PersonalTodo): Promise<void> {
   await executeQuery('INSERT INTO personal_todos (id,userId,title,status) VALUES (?,?,?,?)', [data.id, data.userId, data.title, data.status]);
+  await invalidateList('todos');
 }
 
 export async function updateTodo(id: string, data: Partial<PersonalTodo>): Promise<boolean> {
@@ -293,28 +355,33 @@ export async function updateTodo(id: string, data: Partial<PersonalTodo>): Promi
   const vals = fields.map(f => (data as any)[f]);
   vals.push(id);
   const result = await executeQuery(`UPDATE personal_todos SET ${sets} WHERE id=?`, vals);
+  await invalidateList('todos');
   return result.affectedRows > 0;
 }
 
 export async function deleteTodo(id: string): Promise<void> {
   await executeQuery('DELETE FROM personal_todos WHERE id=?', [id]);
+  await invalidateList('todos');
 }
 
 // --- MEETINGS ---
 export async function listMeetings(): Promise<Meeting[]> {
-  const rows = await executeQuery('SELECT * FROM meetings ORDER BY date ASC, time ASC LIMIT 100000');
-  return rows.map((r: any) => ({
-    id: r.id, userId: r.userId, title: r.title, description: r.description,
-    date: r.date, time: r.time, attendees: r.attendees || '',
-    link: r.link || '', assignedTo: parseJSON(r.assignedTo),
-    reminderMinutes: r.reminderMinutes ?? 0, status: r.status,
-    createdAt: r.createdAt || ''
-  }));
+  return cachedList<Meeting>('meetings', async () => {
+    const rows = await executeQuery('SELECT * FROM meetings ORDER BY date ASC, time ASC LIMIT 100000');
+    return rows.map((r: any) => ({
+      id: r.id, userId: r.userId, title: r.title, description: r.description,
+      date: r.date, time: r.time, attendees: r.attendees || '',
+      link: r.link || '', assignedTo: parseJSON(r.assignedTo),
+      reminderMinutes: r.reminderMinutes ?? 0, status: r.status,
+      createdAt: r.createdAt || ''
+    }));
+  });
 }
 
 export async function createMeeting(data: Meeting): Promise<void> {
   await executeQuery('INSERT INTO meetings (id,userId,title,description,date,time,attendees,link,assignedTo,reminderMinutes,status,createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
     [data.id, data.userId, data.title, data.description, data.date, data.time, data.attendees, data.link || '', JSON.stringify(data.assignedTo || []), data.reminderMinutes, data.status, data.createdAt]);
+  await invalidateList('meetings');
 }
 
 export async function updateMeeting(id: string, data: Partial<Meeting>): Promise<boolean> {
@@ -324,22 +391,27 @@ export async function updateMeeting(id: string, data: Partial<Meeting>): Promise
   const vals = fields.map(f => (data as any)[f]);
   vals.push(id);
   const result = await executeQuery(`UPDATE meetings SET ${sets} WHERE id=?`, vals);
+  await invalidateList('meetings');
   return result.affectedRows > 0;
 }
 
 export async function deleteMeeting(id: string): Promise<void> {
   await executeQuery('DELETE FROM meetings WHERE id=?', [id]);
+  await invalidateList('meetings');
 }
 
 // --- CLIENTS ---
 export async function listClients(): Promise<Client[]> {
-  const rows = await executeQuery('SELECT * FROM clients LIMIT 100000');
-  return rows.map((r: any) => ({ id: r.id, name: r.name, company: r.company, email: r.email, phone: r.phone, status: r.status, revenue: Number(r.revenue) }));
+  return cachedList<Client>('clients', async () => {
+    const rows = await executeQuery('SELECT * FROM clients LIMIT 100000');
+    return rows.map((r: any) => ({ id: r.id, name: r.name, company: r.company, email: r.email, phone: r.phone, status: r.status, revenue: Number(r.revenue) }));
+  });
 }
 
 export async function createClient(data: Client): Promise<void> {
   await executeQuery('INSERT INTO clients (id,name,company,email,phone,status,revenue) VALUES (?,?,?,?,?,?,?)',
     [data.id, data.name, data.company, data.email, data.phone, data.status, data.revenue ?? 0]);
+  await invalidateList('clients');
 }
 
 export async function updateClient(id: string, data: Partial<Client>): Promise<boolean> {
@@ -349,22 +421,27 @@ export async function updateClient(id: string, data: Partial<Client>): Promise<b
   const vals = fields.map(f => (data as any)[f]);
   vals.push(id);
   const result = await executeQuery(`UPDATE clients SET ${sets} WHERE id=?`, vals);
+  await invalidateList('clients');
   return result.affectedRows > 0;
 }
 
 export async function deleteClient(id: string): Promise<void> {
   await executeQuery('DELETE FROM clients WHERE id=?', [id]);
+  await invalidateList('clients');
 }
 
 // --- QUOTES ---
 export async function listQuotes(): Promise<Quote[]> {
-  const rows = await executeQuery('SELECT * FROM quotes LIMIT 100000');
-  return rows.map((r: any) => ({ id: r.id, clientId: r.clientId, description: r.description, amount: Number(r.amount), status: r.status, date: r.date }));
+  return cachedList<Quote>('quotes', async () => {
+    const rows = await executeQuery('SELECT * FROM quotes LIMIT 100000');
+    return rows.map((r: any) => ({ id: r.id, clientId: r.clientId, description: r.description, amount: Number(r.amount), status: r.status, date: r.date }));
+  });
 }
 
 export async function createQuote(data: Quote): Promise<void> {
   await executeQuery('INSERT INTO quotes (id,clientId,description,amount,status,date) VALUES (?,?,?,?,?,?)',
     [data.id, data.clientId, data.description, data.amount, data.status, data.date]);
+  await invalidateList('quotes');
 }
 
 export async function updateQuote(id: string, data: Partial<Quote>): Promise<boolean> {
@@ -374,22 +451,27 @@ export async function updateQuote(id: string, data: Partial<Quote>): Promise<boo
   const vals = fields.map(f => (data as any)[f]);
   vals.push(id);
   const result = await executeQuery(`UPDATE quotes SET ${sets} WHERE id=?`, vals);
+  await invalidateList('quotes');
   return result.affectedRows > 0;
 }
 
 export async function deleteQuote(id: string): Promise<void> {
   await executeQuery('DELETE FROM quotes WHERE id=?', [id]);
+  await invalidateList('quotes');
 }
 
 // --- CONTRACTS ---
 export async function listContracts(): Promise<Contract[]> {
-  const rows = await executeQuery('SELECT * FROM contracts LIMIT 100000');
-  return rows.map((r: any) => ({ id: r.id, clientId: r.clientId, title: r.title, value: Number(r.value), status: r.status, startDate: r.startDate, endDate: r.endDate }));
+  return cachedList<Contract>('contracts', async () => {
+    const rows = await executeQuery('SELECT * FROM contracts LIMIT 100000');
+    return rows.map((r: any) => ({ id: r.id, clientId: r.clientId, title: r.title, value: Number(r.value), status: r.status, startDate: r.startDate, endDate: r.endDate }));
+  });
 }
 
 export async function createContract(data: Contract): Promise<void> {
   await executeQuery('INSERT INTO contracts (id,clientId,title,value,status,startDate,endDate) VALUES (?,?,?,?,?,?,?)',
     [data.id, data.clientId, data.title, data.value, data.status, data.startDate, data.endDate]);
+  await invalidateList('contracts');
 }
 
 export async function updateContract(id: string, data: Partial<Contract>): Promise<boolean> {
@@ -399,22 +481,27 @@ export async function updateContract(id: string, data: Partial<Contract>): Promi
   const vals = fields.map(f => (data as any)[f]);
   vals.push(id);
   const result = await executeQuery(`UPDATE contracts SET ${sets} WHERE id=?`, vals);
+  await invalidateList('contracts');
   return result.affectedRows > 0;
 }
 
 export async function deleteContract(id: string): Promise<void> {
   await executeQuery('DELETE FROM contracts WHERE id=?', [id]);
+  await invalidateList('contracts');
 }
 
 // --- SERVICES ---
 export async function listServices(): Promise<Service[]> {
-  const rows = await executeQuery('SELECT * FROM services LIMIT 100000');
-  return rows.map((r: any) => ({ id: r.id, name: r.name, description: r.description, price: Number(r.price), type: r.type }));
+  return cachedList<Service>('services', async () => {
+    const rows = await executeQuery('SELECT * FROM services LIMIT 100000');
+    return rows.map((r: any) => ({ id: r.id, name: r.name, description: r.description, price: Number(r.price), type: r.type }));
+  });
 }
 
 export async function createService(data: Service): Promise<void> {
   await executeQuery('INSERT INTO services (id,name,description,price,type) VALUES (?,?,?,?,?)',
     [data.id, data.name, data.description, data.price, data.type]);
+  await invalidateList('services');
 }
 
 export async function updateService(id: string, data: Partial<Service>): Promise<boolean> {
@@ -424,22 +511,27 @@ export async function updateService(id: string, data: Partial<Service>): Promise
   const vals = fields.map(f => (data as any)[f]);
   vals.push(id);
   const result = await executeQuery(`UPDATE services SET ${sets} WHERE id=?`, vals);
+  await invalidateList('services');
   return result.affectedRows > 0;
 }
 
 export async function deleteService(id: string): Promise<void> {
   await executeQuery('DELETE FROM services WHERE id=?', [id]);
+  await invalidateList('services');
 }
 
 // --- CREDENTIALS ---
 export async function listCredentials(): Promise<CredentialWeb[]> {
-  const rows = await executeQuery('SELECT * FROM credentials LIMIT 100000');
-  return rows.map((r: any) => ({ id: r.id, title: r.title, url: r.url, username: r.username, password: r.password, notes: r.notes, category: r.category }));
+  return cachedList<CredentialWeb>('credentials', async () => {
+    const rows = await executeQuery('SELECT * FROM credentials LIMIT 100000');
+    return rows.map((r: any) => ({ id: r.id, title: r.title, url: r.url, username: r.username, password: r.password, notes: r.notes, category: r.category }));
+  });
 }
 
 export async function createCredential(data: CredentialWeb): Promise<void> {
   await executeQuery('INSERT INTO credentials (id,title,url,username,password,notes,category) VALUES (?,?,?,?,?,?,?)',
     [data.id, data.title, data.url, data.username, data.password, data.notes, data.category]);
+  await invalidateList('credentials');
 }
 
 export async function updateCredential(id: string, data: Partial<CredentialWeb>): Promise<boolean> {
@@ -449,11 +541,13 @@ export async function updateCredential(id: string, data: Partial<CredentialWeb>)
   const vals = fields.map(f => (data as any)[f]);
   vals.push(id);
   const result = await executeQuery(`UPDATE credentials SET ${sets} WHERE id=?`, vals);
+  await invalidateList('credentials');
   return result.affectedRows > 0;
 }
 
 export async function deleteCredential(id: string): Promise<void> {
   await executeQuery('DELETE FROM credentials WHERE id=?', [id]);
+  await invalidateList('credentials');
 }
 
 // --- CHAT CHANNELS ---
@@ -547,28 +641,39 @@ export async function deleteTaskComment(id: string): Promise<void> {
 
 // --- SUPPORT TICKETS ---
 export async function listTickets(): Promise<SupportTicket[]> {
-  const rows = await executeQuery('SELECT * FROM support_tickets ORDER BY createdAt DESC LIMIT 100000');
-  const tickets: SupportTicket[] = [];
-  const ticketIds = rows.map((r: any) => r.id);
-  const commentsByTicket: Record<string, TicketComment[]> = {};
-  if (ticketIds.length > 0) {
-    const placeholders = ticketIds.map(() => '?').join(',');
-    const commentRows = await executeQuery(`SELECT * FROM ticket_comments WHERE ticketId IN (${placeholders}) ORDER BY timestamp ASC`, ticketIds);
-    for (const r of commentRows) {
-      if (!commentsByTicket[r.ticketId]) commentsByTicket[r.ticketId] = [];
-      commentsByTicket[r.ticketId].push({
-        id: r.id, authorName: r.authorName, authorEmail: r.authorEmail,
-        text: r.text, timestamp: r.timestamp, isAdmin: !!r.isAdmin,
-        attachments: r.attachments ? JSON.parse(r.attachments) : []
-      });
+  return cachedList<SupportTicket>('tickets', async () => {
+    const rows = await executeQuery('SELECT * FROM support_tickets ORDER BY createdAt DESC LIMIT 100000');
+    const tickets: SupportTicket[] = [];
+    const ticketIds = rows.map((r: any) => r.id);
+    const commentsByTicket: Record<string, TicketComment[]> = {};
+    if (ticketIds.length > 0) {
+      const placeholders = ticketIds.map(() => '?').join(',');
+      const commentRows = await executeQuery(`SELECT * FROM ticket_comments WHERE ticketId IN (${placeholders}) ORDER BY timestamp ASC`, ticketIds);
+      for (const r of commentRows) {
+        if (!commentsByTicket[r.ticketId]) commentsByTicket[r.ticketId] = [];
+        commentsByTicket[r.ticketId].push({
+          id: r.id, authorName: r.authorName, authorEmail: r.authorEmail,
+          text: r.text, timestamp: r.timestamp, isAdmin: !!r.isAdmin,
+          attachments: r.attachments ? JSON.parse(r.attachments) : []
+        });
+      }
     }
-  }
-  for (const r of rows) {
-    const comments = commentsByTicket[r.id] || [];
-    const attachments = r.attachments ? JSON.parse(r.attachments) : [];
-    tickets.push({ id: r.id, title: r.title, description: r.description, creatorName: r.creatorName, creatorEmail: r.creatorEmail, clientId: r.clientId, status: r.status, priority: r.priority, category: r.category, createdAt: r.createdAt, comments, attachments });
-  }
-  return tickets;
+    for (const r of rows) {
+      const comments = commentsByTicket[r.id] || [];
+      const attachments = r.attachments ? JSON.parse(r.attachments) : [];
+      tickets.push({ id: r.id, title: r.title, description: r.description, creatorName: r.creatorName, creatorEmail: r.creatorEmail, clientId: r.clientId, status: r.status, priority: r.priority, category: r.category, createdAt: r.createdAt, comments, attachments });
+    }
+    return tickets;
+  });
+}
+
+export async function getTicketById(id: string): Promise<SupportTicket | null> {
+  const rows = await executeQuery('SELECT * FROM support_tickets WHERE id=? LIMIT 1', [id]);
+  if (!rows.length) return null;
+  const r = rows[0];
+  const comments = await getTicketComments(r.id);
+  const attachments = r.attachments ? JSON.parse(r.attachments) : [];
+  return { id: r.id, title: r.title, description: r.description, creatorName: r.creatorName, creatorEmail: r.creatorEmail, clientId: r.clientId, status: r.status, priority: r.priority, category: r.category, createdAt: r.createdAt, comments, attachments };
 }
 
 export async function createTicket(data: SupportTicket): Promise<void> {
@@ -577,6 +682,7 @@ export async function createTicket(data: SupportTicket): Promise<void> {
   for (const c of data.comments) {
     await addTicketComment(data.id, c);
   }
+  await invalidateList('tickets');
 }
 
 export async function updateTicket(id: string, data: Partial<SupportTicket>): Promise<boolean> {
@@ -586,11 +692,13 @@ export async function updateTicket(id: string, data: Partial<SupportTicket>): Pr
   const vals = fields.map(f => (data as any)[f]);
   vals.push(id);
   const result = await executeQuery(`UPDATE support_tickets SET ${sets} WHERE id=?`, vals);
+  await invalidateList('tickets');
   return result.affectedRows > 0;
 }
 
 export async function deleteTicket(id: string): Promise<boolean> {
   const result = await executeQuery('DELETE FROM support_tickets WHERE id=?', [id]);
+  await invalidateList('tickets');
   return result.affectedRows > 0;
 }
 
@@ -602,6 +710,7 @@ export async function getTicketComments(ticketId: string): Promise<TicketComment
 export async function addTicketComment(ticketId: string, data: TicketComment): Promise<void> {
   await executeQuery('INSERT INTO ticket_comments (id,ticketId,authorName,authorEmail,text,timestamp,isAdmin,attachments) VALUES (?,?,?,?,?,?,?,?)',
     [data.id, ticketId, data.authorName, data.authorEmail, data.text, data.timestamp, data.isAdmin, data.attachments ? JSON.stringify(data.attachments) : null]);
+  await invalidateList('tickets');
 }
 
 // --- TICKET CLIENTS ---
@@ -720,4 +829,74 @@ export async function updateMeetingMinute(id: string, updates: Partial<MeetingMi
 export async function deleteMeetingMinute(id: string): Promise<void> {
   await executeQuery('DELETE FROM meeting_minutes WHERE id=?', [id]);
   await cacheDelPattern('dao:meeting_minutes*');
+}
+
+// --- VENDOR LEADS ---
+export async function listVendorLeads(vendorId?: string): Promise<VendorLead[]> {
+  return cachedList<VendorLead>(vendorId ? `vendor_leads:${vendorId}` : 'vendor_leads', async () => {
+    if (vendorId) {
+      const rows = await executeQuery('SELECT * FROM vendor_leads WHERE vendorId=? ORDER BY createdAt DESC LIMIT 100000', [vendorId]);
+      return rows.map((r: any) => ({ id: r.id, vendorId: r.vendorId, clientName: r.clientName, phone: r.phone || '', serviceInterest: r.serviceInterest || '', city: r.city || '', email: r.email || '', notes: r.notes || '', status: r.status || 'pending', createdAt: r.createdAt, updatedAt: r.updatedAt }));
+    }
+    const rows = await executeQuery('SELECT * FROM vendor_leads ORDER BY createdAt DESC LIMIT 100000');
+    return rows.map((r: any) => ({ id: r.id, vendorId: r.vendorId, clientName: r.clientName, phone: r.phone || '', serviceInterest: r.serviceInterest || '', city: r.city || '', email: r.email || '', notes: r.notes || '', status: r.status || 'pending', createdAt: r.createdAt, updatedAt: r.updatedAt }));
+  });
+}
+
+export async function getVendorLeadById(id: string): Promise<VendorLead | null> {
+  const rows = await executeQuery('SELECT * FROM vendor_leads WHERE id=? LIMIT 1', [id]);
+  if (!rows.length) return null;
+  const r = rows[0];
+  return { id: r.id, vendorId: r.vendorId, clientName: r.clientName, phone: r.phone || '', serviceInterest: r.serviceInterest || '', city: r.city || '', email: r.email || '', notes: r.notes || '', status: r.status || 'pending', createdAt: r.createdAt, updatedAt: r.updatedAt };
+}
+
+export async function createVendorLead(data: VendorLead): Promise<void> {
+  await executeQuery('INSERT INTO vendor_leads (id,vendorId,clientName,phone,serviceInterest,city,email,notes,status,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+    [data.id, data.vendorId, data.clientName, data.phone, data.serviceInterest, data.city, data.email, data.notes, data.status, data.createdAt, data.updatedAt]);
+  await invalidateList('vendor_leads');
+  await invalidateList(`vendor_leads:${data.vendorId}`);
+}
+
+export async function updateVendorLead(id: string, data: Partial<VendorLead>): Promise<boolean> {
+  const fields = Object.keys(data).filter(k => k !== 'id');
+  if (!fields.length) return false;
+  const sets = fields.map(f => `${f}=?`).join(',');
+  const vals = fields.map(f => (data as any)[f]);
+  vals.push(id);
+  const result = await executeQuery(`UPDATE vendor_leads SET ${sets} WHERE id=?`, vals);
+  await invalidateList('vendor_leads');
+  if (data.vendorId) await invalidateList(`vendor_leads:${data.vendorId}`);
+  return result.affectedRows > 0;
+}
+
+export async function deleteVendorLead(id: string): Promise<void> {
+  const lead = await getVendorLeadById(id);
+  await executeQuery('DELETE FROM vendor_leads WHERE id=?', [id]);
+  await executeQuery('DELETE FROM vendor_activities WHERE leadId=?', [id]);
+  await invalidateList('vendor_leads');
+  if (lead) await invalidateList(`vendor_leads:${lead.vendorId}`);
+}
+
+// --- VENDOR LEAD ACTIVITIES ---
+export async function listVendorActivities(leadId?: string, vendorId?: string, from?: string, to?: string): Promise<VendorLeadActivity[]> {
+  const cacheSuffix = `${leadId || ''}:${vendorId || ''}:${from || ''}:${to || ''}`;
+  return cachedList<VendorLeadActivity>(`vendor_activities:${cacheSuffix}`, async () => {
+    let sql = 'SELECT * FROM vendor_activities WHERE 1=1';
+    const params: any[] = [];
+    if (leadId) { sql += ' AND leadId=?'; params.push(leadId); }
+    if (vendorId) { sql += ' AND vendorId=?'; params.push(vendorId); }
+    if (from) { sql += ' AND createdAt>=?'; params.push(from); }
+    if (to) { sql += ' AND createdAt<=?'; params.push(to + ' 23:59:59'); }
+    sql += ' ORDER BY createdAt DESC LIMIT 100000';
+    const rows = await executeQuery(sql, params);
+    return rows.map((r: any) => ({ id: r.id, leadId: r.leadId, vendorId: r.vendorId, type: r.type, description: r.description || '', createdAt: r.createdAt }));
+  });
+}
+
+export async function createVendorActivity(data: VendorLeadActivity): Promise<void> {
+  await executeQuery('INSERT INTO vendor_activities (id,leadId,vendorId,type,description,createdAt) VALUES (?,?,?,?,?,?)',
+    [data.id, data.leadId, data.vendorId, data.type, data.description, data.createdAt]);
+  await invalidateList('vendor_activities');
+  await invalidateList(`vendor_leads:${data.vendorId}`);
+  await invalidateList('vendor_leads');
 }

@@ -266,3 +266,30 @@ export interface MeetingMinute {
   documentUrl: string;
   createdAt: string;
 }
+
+// --- Vendor Leads & Activities ---
+export type LeadStatus = 'pending' | 'contacted' | 'proposal' | 'negotiation' | 'won' | 'lost';
+export type ActivityType = 'call' | 'meeting' | 'email' | 'whatsapp' | 'visit' | 'other';
+
+export interface VendorLead {
+  id: string;
+  vendorId: string;
+  clientName: string;
+  phone: string;
+  serviceInterest: string;
+  city: string;
+  email: string;
+  notes: string;
+  status: LeadStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VendorLeadActivity {
+  id: string;
+  leadId: string;
+  vendorId: string;
+  type: ActivityType;
+  description: string;
+  createdAt: string;
+}
