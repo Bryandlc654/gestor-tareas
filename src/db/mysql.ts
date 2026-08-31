@@ -207,6 +207,7 @@ export async function bootstrapMysqlSchema(): Promise<void> {
     try { await executeQuery(`ALTER TABLE clients ADD COLUMN serviceInterest VARCHAR(255)`); } catch {}
     try { await executeQuery(`ALTER TABLE clients ADD COLUMN notes TEXT`); } catch {}
     try { await executeQuery(`ALTER TABLE clients ADD COLUMN createdAt VARCHAR(100)`); } catch {}
+    try { await executeQuery(`ALTER TABLE clients ADD COLUMN updatedAt VARCHAR(100)`); } catch {}
 
     // 9. Quotes
     await executeQuery(`
