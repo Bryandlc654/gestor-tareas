@@ -789,7 +789,7 @@ async function startServer() {
   }));
 
   app.post("/api/clients", asyncHandler(async (req, res) => {
-    const vendorId = getVendorId(req);
+    const vendorId = await getVendorId(req);
     const client: Client = {
       id: genId("cli-"),
       name: sanitizeStr(req.body.name, MAX_SHORT_STR),
@@ -1845,126 +1845,60 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
   });
 
   // --- VENDOR LEADS & ACTIVITIES ---
-  function getVendorId(req: express.Request): string | null {
+  // Resolve the current user id from a legacy JWT Bearer token OR the Auth.js (cookie) session.
+  async function getVendorId(req: express.Request): Promise<string | null> {
     const auth = req.headers.authorization;
-    if (!auth?.startsWith('Bearer ')) return null;
+    if (auth?.startsWith('Bearer ')) {
+      try {
+        const payload = jwt.verify(auth.slice(7), JWT_SECRET) as any;
+        const id = payload.userId || payload.id;
+        if (id) return id;
+      } catch { /* fall through to session */ }
+    }
     try {
-      const payload = jwt.verify(auth.slice(7), JWT_SECRET) as any;
-      return payload.userId || payload.id || null;
+      const session = await authJsGetSession(req, authJsConfig);
+      const id = (session?.user as any)?.id;
+      return id || null;
     } catch { return null; }
   }
 
-  function isAdminUser(req: express.Request): boolean {
+  async function isAdminUser(req: express.Request): Promise<boolean> {
+    let roleId: string | null = null;
     const auth = req.headers.authorization;
-    if (!auth?.startsWith('Bearer ')) return false;
-    try {
-      const payload = jwt.verify(auth.slice(7), JWT_SECRET) as any;
-      return payload.roleId === 'role-admin' || payload.roleId === 'role-superadmin';
-    } catch { return false; }
+    if (auth?.startsWith('Bearer ')) {
+      try {
+        const payload = jwt.verify(auth.slice(7), JWT_SECRET) as any;
+        roleId = payload.roleId || null;
+      } catch { /* fall through to session */ }
+    }
+    if (!roleId) {
+      try {
+        const session = await authJsGetSession(req, authJsConfig);
+        const uid = (session?.user as any)?.id;
+        if (uid) {
+          const user = await dao.getUserById(uid);
+          roleId = user?.roleId || null;
+        }
+      } catch { /* ignore */ }
+    }
+    return roleId === 'role-admin' || roleId === 'role-superadmin';
   }
 
   // List vendor leads (admin: all, vendor: only own)
   app.get("/api/vendor-leads", asyncHandler(async (req, res) => {
-    const vendorId = getVendorId(req);
+    const vendorId = await getVendorId(req);
     if (!vendorId) return res.status(401).json({ error: "No autenticado" });
-    const admin = isAdminUser(req);
+    const admin = await isAdminUser(req);
     const leads = await dao.listVendorLeads(admin ? undefined : vendorId);
     res.json(leads);
   }));
 
-  // Get single vendor lead
-  app.get("/api/vendor-leads/:id", asyncHandler(async (req, res) => {
-    const vendorId = getVendorId(req);
-    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
-    const lead = await dao.getVendorLeadById(req.params.id);
-    if (!lead) return res.status(404).json({ error: "Lead no encontrado" });
-    if (!isAdminUser(req) && lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
-    res.json(lead);
-  }));
-
-  // Create vendor lead (creates a CRM client row with vendor fields)
-  app.post("/api/vendor-leads", asyncHandler(async (req, res) => {
-    const vendorId = getVendorId(req);
-    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
-    const clientName = String(req.body.clientName || '').trim();
-    if (!clientName) return res.status(400).json({ error: "Nombre del cliente es obligatorio" });
-    const lead = await dao.upsertVendorLeadIntoClient({
-      vendorId,
-      clientName,
-      phone: String(req.body.phone || '').trim(),
-      serviceInterest: String(req.body.serviceInterest || '').trim(),
-      city: String(req.body.city || '').trim(),
-      email: String(req.body.email || '').trim(),
-      notes: String(req.body.notes || '').trim(),
-      status: ['pending', 'contacted', 'proposal', 'negotiation', 'won', 'lost'].includes(req.body.status) ? req.body.status : 'pending'
-    });
-    res.status(201).json(lead);
-  }));
-
-  // Update vendor lead
-  app.put("/api/vendor-leads/:id", asyncHandler(async (req, res) => {
-    const vendorId = getVendorId(req);
-    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
-    const existing = await dao.getVendorLeadById(req.params.id);
-    if (!existing) return res.status(404).json({ error: "Lead no encontrado" });
-    if (!isAdminUser(req) && existing.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
-    const updates: any = { ...req.body, updatedAt: new Date().toISOString() };
-    delete updates.id;
-    delete updates.vendorId;
-    await dao.updateVendorLead(req.params.id, updates);
-    res.json({ ...existing, ...updates });
-  }));
-
-  // Delete vendor lead
-  app.delete("/api/vendor-leads/:id", asyncHandler(async (req, res) => {
-    const vendorId = getVendorId(req);
-    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
-    const existing = await dao.getVendorLeadById(req.params.id);
-    if (!existing) return res.status(404).json({ error: "Lead no encontrado" });
-    if (!isAdminUser(req) && existing.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
-    await dao.deleteVendorLead(req.params.id);
-    res.json({ success: true });
-  }));
-
-  // List activities for a lead
-  app.get("/api/vendor-leads/:id/activities", asyncHandler(async (req, res) => {
-    const vendorId = getVendorId(req);
-    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
-    const lead = await dao.getVendorLeadById(req.params.id);
-    if (!lead) return res.status(404).json({ error: "Lead no encontrado" });
-    if (!isAdminUser(req) && lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
-    const activities = await dao.listVendorActivities(req.params.id);
-    res.json(activities);
-  }));
-
-  // Create activity for a lead
-  app.post("/api/vendor-leads/:id/activities", asyncHandler(async (req, res) => {
-    const vendorId = getVendorId(req);
-    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
-    const lead = await dao.getVendorLeadById(req.params.id);
-    if (!lead) return res.status(404).json({ error: "Lead no encontrado" });
-    if (!isAdminUser(req) && lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
-    const activity = {
-      id: `va-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
-      leadId: req.params.id,
-      vendorId,
-      type: ['call', 'meeting', 'email', 'whatsapp', 'visit', 'other'].includes(req.body.type) ? req.body.type : 'other',
-      description: String(req.body.description || '').trim(),
-      createdAt: new Date().toISOString()
-    };
-    await dao.createVendorActivity(activity);
-    // Auto-update lead status to 'contacted' if still pending after first activity
-    if (lead.status === 'pending') {
-      await dao.updateVendorLead(lead.id, { status: 'contacted', updatedAt: new Date().toISOString() });
-    }
-    res.status(201).json(activity);
-  }));
-
   // Report endpoint: aggregated data for PDF generation
+  // (MUST be registered before /api/vendor-leads/:id so "report" is not captured as an id)
   app.get("/api/vendor-leads/report", asyncHandler(async (req, res) => {
-    const vendorId = getVendorId(req);
+    const vendorId = await getVendorId(req);
     if (!vendorId) return res.status(401).json({ error: "No autenticado" });
-    const targetVendorId = isAdminUser(req) ? (req.query.vendorId as string || undefined) : vendorId;
+    const targetVendorId = (await isAdminUser(req)) ? (req.query.vendorId as string || undefined) : vendorId;
     const from = req.query.from as string || undefined;
     const to = req.query.to as string || undefined;
 
@@ -2003,6 +1937,94 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
       leads: filteredLeads,
       activities
     });
+  }));
+
+  // Get single vendor lead
+  app.get("/api/vendor-leads/:id", asyncHandler(async (req, res) => {
+    const vendorId = await getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const lead = await dao.getVendorLeadById(req.params.id);
+    if (!lead) return res.status(404).json({ error: "Lead no encontrado" });
+    if (!(await isAdminUser(req)) && lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    res.json(lead);
+  }));
+
+  // Create vendor lead (creates a CRM client row with vendor fields)
+  app.post("/api/vendor-leads", asyncHandler(async (req, res) => {
+    const vendorId = await getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const clientName = String(req.body.clientName || '').trim();
+    if (!clientName) return res.status(400).json({ error: "Nombre del cliente es obligatorio" });
+    const lead = await dao.upsertVendorLeadIntoClient({
+      vendorId,
+      clientName,
+      phone: String(req.body.phone || '').trim(),
+      serviceInterest: String(req.body.serviceInterest || '').trim(),
+      city: String(req.body.city || '').trim(),
+      email: String(req.body.email || '').trim(),
+      notes: String(req.body.notes || '').trim(),
+      status: ['pending', 'contacted', 'proposal', 'negotiation', 'won', 'lost'].includes(req.body.status) ? req.body.status : 'pending'
+    });
+    res.status(201).json(lead);
+  }));
+
+  // Update vendor lead
+  app.put("/api/vendor-leads/:id", asyncHandler(async (req, res) => {
+    const vendorId = await getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const existing = await dao.getVendorLeadById(req.params.id);
+    if (!existing) return res.status(404).json({ error: "Lead no encontrado" });
+    if (!(await isAdminUser(req)) && existing.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    const updates: any = { ...req.body, updatedAt: new Date().toISOString() };
+    delete updates.id;
+    delete updates.vendorId;
+    await dao.updateVendorLead(req.params.id, updates);
+    res.json({ ...existing, ...updates });
+  }));
+
+  // Delete vendor lead
+  app.delete("/api/vendor-leads/:id", asyncHandler(async (req, res) => {
+    const vendorId = await getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const existing = await dao.getVendorLeadById(req.params.id);
+    if (!existing) return res.status(404).json({ error: "Lead no encontrado" });
+    if (!(await isAdminUser(req)) && existing.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    await dao.deleteVendorLead(req.params.id);
+    res.json({ success: true });
+  }));
+
+  // List activities for a lead
+  app.get("/api/vendor-leads/:id/activities", asyncHandler(async (req, res) => {
+    const vendorId = await getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const lead = await dao.getVendorLeadById(req.params.id);
+    if (!lead) return res.status(404).json({ error: "Lead no encontrado" });
+    if (!(await isAdminUser(req)) && lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    const activities = await dao.listVendorActivities(req.params.id);
+    res.json(activities);
+  }));
+
+  // Create activity for a lead
+  app.post("/api/vendor-leads/:id/activities", asyncHandler(async (req, res) => {
+    const vendorId = await getVendorId(req);
+    if (!vendorId) return res.status(401).json({ error: "No autenticado" });
+    const lead = await dao.getVendorLeadById(req.params.id);
+    if (!lead) return res.status(404).json({ error: "Lead no encontrado" });
+    if (!(await isAdminUser(req)) && lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    const activity = {
+      id: `va-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+      leadId: req.params.id,
+      vendorId,
+      type: ['call', 'meeting', 'email', 'whatsapp', 'visit', 'other'].includes(req.body.type) ? req.body.type : 'other',
+      description: String(req.body.description || '').trim(),
+      createdAt: new Date().toISOString()
+    };
+    await dao.createVendorActivity(activity);
+    // Auto-update lead status to 'contacted' if still pending after first activity
+    if (lead.status === 'pending') {
+      await dao.updateVendorLead(lead.id, { status: 'contacted', updatedAt: new Date().toISOString() });
+    }
+    res.status(201).json(activity);
   }));
 
   // Error handler global
