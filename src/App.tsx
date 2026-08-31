@@ -264,15 +264,43 @@ export default function App() {
   // --- Mutation handlers: actualizan estado local sin recargar ---
   const handleAddClient = async (client: Partial<Client>) => {
     const data = await callApi('/api/clients', 'POST', client);
-    if (data) setClients(prev => [...prev, data]);
+    if (data) {
+      setClients(prev => [...prev, data]);
+      if (data.vendorId) {
+        setVendorLeads(prev => prev.some(l => l.id === data.id) ? prev : [...prev, {
+          id: data.id,
+          clientName: data.name,
+          vendorId: data.vendorId,
+          phone: data.phone || '',
+          email: data.email || '',
+          serviceInterest: data.serviceInterest || '',
+          city: data.city || '',
+          notes: data.notes || '',
+          status: (data.status === 'lead' ? 'pending' : data.status) as VendorLead['status'],
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.createdAt || new Date().toISOString()
+        }]);
+      }
+    }
   };
   const handleUpdateClient = async (id: string, client: Partial<Client>) => {
     await callApi(`/api/clients/${id}`, 'PUT', client);
     setClients(prev => prev.map(c => c.id === id ? { ...c, ...client } : c));
+    setVendorLeads(prev => prev.map(l => l.id === id ? {
+      ...l,
+      ...(client.name !== undefined ? { clientName: client.name } : {}),
+      phone: client.phone ?? l.phone,
+      email: client.email ?? l.email,
+      serviceInterest: client.serviceInterest ?? l.serviceInterest,
+      city: client.city ?? l.city,
+      notes: client.notes ?? l.notes,
+      status: client.status ? (client.status === 'lead' ? 'pending' : client.status) as VendorLead['status'] : l.status
+    } : l));
   };
   const handleDeleteClient = async (id: string) => {
     await callApi(`/api/clients/${id}`, 'DELETE');
     setClients(prev => prev.filter(c => c.id !== id));
+    setVendorLeads(prev => prev.filter(l => l.id !== id));
   };
 
   const handleAddQuote = async (quote: Partial<Quote>) => {
@@ -477,18 +505,46 @@ export default function App() {
     setMeetingMinutes(prev => prev.filter(m => m.id !== id));
   };
 
-  // Vendor Leads CRUD
+  // Vendor Leads CRUD (backed by CRM `clients` table)
   const handleAddVendorLead = async (lead: Partial<VendorLead>) => {
     const data = await callApi('/api/vendor-leads', 'POST', lead);
-    if (data) setVendorLeads(prev => [data, ...prev]);
+    if (data) {
+      setVendorLeads(prev => [data, ...prev]);
+      setClients(prev => prev.some(c => c.id === data.id) ? prev : [...prev, {
+        id: data.id,
+        name: data.clientName,
+        company: 'Particular',
+        email: data.email || '',
+        phone: data.phone || '',
+        status: (data.status === 'pending' ? 'lead' : data.status) as Client['status'],
+        vendorId: data.vendorId,
+        city: data.city,
+        serviceInterest: data.serviceInterest,
+        notes: data.notes,
+        createdAt: data.createdAt
+      }]);
+    }
   };
   const handleUpdateVendorLead = async (id: string, lead: Partial<VendorLead>) => {
     const data = await callApi(`/api/vendor-leads/${id}`, 'PUT', lead);
-    if (data) setVendorLeads(prev => prev.map(l => l.id === id ? data : l));
+    if (data) {
+      setVendorLeads(prev => prev.map(l => l.id === id ? data : l));
+      setClients(prev => prev.map(c => c.id === id ? {
+        ...c,
+        name: data.clientName ?? c.name,
+        email: data.email ?? c.email,
+        phone: data.phone ?? c.phone,
+        status: (data.status === 'pending' ? 'lead' : data.status) as Client['status'],
+        city: data.city ?? c.city,
+        serviceInterest: data.serviceInterest ?? c.serviceInterest,
+        notes: data.notes ?? c.notes
+      } : c));
+    }
   };
   const handleDeleteVendorLead = async (id: string) => {
     await callApi(`/api/vendor-leads/${id}`, 'DELETE');
     setVendorLeads(prev => prev.filter(l => l.id !== id));
+    setClients(prev => prev.filter(c => c.id !== id));
   };
 
   // Mark notifications locally without refetch

@@ -3,7 +3,7 @@ import {
   Plus, DollarSign, Calendar, FileText, CheckCircle, Clock, 
   Trash, Edit, Briefcase, ChevronRight, UserPlus, FileSignature, Sparkles,
   Pencil, Trash2, Eye, X, Phone, Mail, Building2, User,
-  Target, ArrowRight
+  Target, ArrowRight, MapPin
 } from 'lucide-react';
 import { Client, Quote, Contract, Service } from '../types';
 
@@ -37,7 +37,7 @@ export default function PipelineView({
   
   // Modal configurations
   const [showClientModal, setShowClientModal] = useState(false);
-  const [clientForm, setClientForm] = useState({ name: '', company: '', email: '', phone: '', status: 'lead', revenue: '' });
+  const [clientForm, setClientForm] = useState({ name: '', company: '', email: '', phone: '', status: 'lead', revenue: '', city: '', serviceInterest: '', notes: '' });
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
 
   const [showQuoteModal, setShowQuoteModal] = useState(false);
@@ -83,7 +83,7 @@ export default function PipelineView({
       });
     }
     setShowClientModal(false);
-    setClientForm({ name: '', company: '', email: '', phone: '', status: 'lead', revenue: '' });
+    setClientForm({ name: '', company: '', email: '', phone: '', status: 'lead', revenue: '', city: '', serviceInterest: '', notes: '' });
     setEditingClientId(null);
   };
 
@@ -172,7 +172,7 @@ export default function PipelineView({
             <button
               onClick={() => {
                 setEditingClientId(null);
-                setClientForm({ name: '', company: '', email: '', phone: '', status: 'lead', revenue: '' });
+                setClientForm({ name: '', company: '', email: '', phone: '', status: 'lead', revenue: '', city: '', serviceInterest: '', notes: '' });
                 setShowClientModal(true);
               }}
               className="px-3 py-1.5 bg-[#37352F] text-white rounded hover:bg-opacity-95 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
@@ -321,7 +321,10 @@ export default function PipelineView({
                                 email: client.email,
                                 phone: client.phone,
                                 status: client.status,
-                                revenue: client.revenue ? client.revenue.toString() : ''
+                                revenue: client.revenue ? client.revenue.toString() : '',
+                                city: client.city || '',
+                                serviceInterest: client.serviceInterest || '',
+                                notes: client.notes || ''
                               });
                               setShowClientModal(true);
                             }}
@@ -690,6 +693,40 @@ export default function PipelineView({
                   <option value="won">Ganado / Firma</option>
                 </select>
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-medium text-[#5A5A57]">Servicio de Interés</label>
+                  <input
+                    type="text"
+                    value={clientForm.serviceInterest}
+                    onChange={e => setClientForm({ ...clientForm, serviceInterest: e.target.value })}
+                    placeholder="Ej. Desarrollo Web"
+                    className="w-full mt-1 px-2.5 py-1.5 border border-[#EDEDEB] rounded bg-white focus:outline-none focus:border-[#37352F]"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-[#5A5A57]">Ciudad</label>
+                  <input
+                    type="text"
+                    value={clientForm.city}
+                    onChange={e => setClientForm({ ...clientForm, city: e.target.value })}
+                    placeholder="Ej. Lima"
+                    className="w-full mt-1 px-2.5 py-1.5 border border-[#EDEDEB] rounded bg-white focus:outline-none focus:border-[#37352F]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-medium text-[#5A5A57]">Dato Relevante de la Conversación</label>
+                <textarea
+                  value={clientForm.notes}
+                  onChange={e => setClientForm({ ...clientForm, notes: e.target.value })}
+                  placeholder="Información más relevante del contacto..."
+                  rows={2}
+                  className="w-full mt-1 px-3 py-2 border border-[#EDEDEB] rounded bg-white focus:outline-none focus:border-[#37352F] resize-none"
+                />
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 text-xs pt-2">
@@ -769,7 +806,28 @@ export default function PipelineView({
                   </span>
                   <p className="font-medium font-mono">{detailClient.revenue ? `S/ ${detailClient.revenue.toLocaleString()}` : '—'}</p>
                 </div>
+                <div className="space-y-1.5">
+                  <span className="text-[9px] uppercase tracking-wider text-[#91918E] font-semibold flex items-center gap-1">
+                    <Target className="w-3 h-3" /> Servicio
+                  </span>
+                  <p className="font-medium">{detailClient.serviceInterest || '—'}</p>
+                </div>
+                <div className="space-y-1.5">
+                  <span className="text-[9px] uppercase tracking-wider text-[#91918E] font-semibold flex items-center gap-1">
+                    <MapPin className="w-3 h-3" /> Ciudad
+                  </span>
+                  <p className="font-medium">{detailClient.city || '—'}</p>
+                </div>
               </div>
+
+              {detailClient.notes && (
+                <div>
+                  <h3 className="text-[10px] uppercase tracking-wider text-[#91918E] font-semibold mb-2 flex items-center gap-1">
+                    <FileText className="w-3 h-3" /> Dato Relevante
+                  </h3>
+                  <p className="bg-[#F7F7F5] border border-[#EDEDEB] rounded p-3 text-[#5A5A57]">{detailClient.notes}</p>
+                </div>
+              )}
 
               {/* Related Quotes */}
               <div>

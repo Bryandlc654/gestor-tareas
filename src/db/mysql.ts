@@ -201,6 +201,12 @@ export async function bootstrapMysqlSchema(): Promise<void> {
         revenue DECIMAL(12, 2) DEFAULT 0
       );
     `);
+    // Migration: add vendor/sales columns if missing (kept in sync with VendorLead)
+    try { await executeQuery(`ALTER TABLE clients ADD COLUMN vendorId VARCHAR(255)`); } catch {}
+    try { await executeQuery(`ALTER TABLE clients ADD COLUMN city VARCHAR(255)`); } catch {}
+    try { await executeQuery(`ALTER TABLE clients ADD COLUMN serviceInterest VARCHAR(255)`); } catch {}
+    try { await executeQuery(`ALTER TABLE clients ADD COLUMN notes TEXT`); } catch {}
+    try { await executeQuery(`ALTER TABLE clients ADD COLUMN createdAt VARCHAR(100)`); } catch {}
 
     // 9. Quotes
     await executeQuery(`
@@ -423,6 +429,7 @@ export async function bootstrapMysqlSchema(): Promise<void> {
       ['idx_support_tickets_created', 'ALTER TABLE support_tickets ADD INDEX idx_support_tickets_created (createdAt)'],
       ['idx_personal_todos_user', 'ALTER TABLE personal_todos ADD INDEX idx_personal_todos_user (userId)'],
       ['idx_fcm_tokens_user', 'ALTER TABLE fcm_tokens ADD INDEX idx_fcm_tokens_user (userId)'],
+      ['idx_clients_vendor', 'ALTER TABLE clients ADD INDEX idx_clients_vendor (vendorId)'],
       ['idx_vendor_leads_vendor', 'ALTER TABLE vendor_leads ADD INDEX idx_vendor_leads_vendor (vendorId)'],
       ['idx_vendor_activities_lead', 'ALTER TABLE vendor_activities ADD INDEX idx_vendor_activities_lead (leadId)'],
       ['idx_vendor_activities_vendor', 'ALTER TABLE vendor_activities ADD INDEX idx_vendor_activities_vendor (vendorId)'],
@@ -431,6 +438,18 @@ export async function bootstrapMysqlSchema(): Promise<void> {
       try { await executeQuery(stmt); } catch { /* already exists or column missing */ }
     }
     console.log('[MySQL] Performance indexes ensured.');
+
+    // One-time migration: move legacy vendor_leads rows into the CRM `clients` table
+    // (vendor leads and CRM clients are now the same data).
+    try {
+      const [legacyRows] = await (getMysqlPool() as any).execute('SELECT * FROM vendor_leads WHERE 1=1');
+      for (const lr of legacyRows as any[]) {
+        const [existing] = await (getMysqlPool() as any).execute('SELECT id FROM clients WHERE id=?', [lr.id]);
+        if (existing.length) continue;
+        await executeQuery('INSERT INTO clients (id,name,company,email,phone,status,revenue,vendorId,city,serviceInterest,notes,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          [lr.id, lr.clientName || lr.name, 'Particular', lr.email || '', lr.phone || '', lr.status || 'pending', 0, lr.vendorId || 'user-1', lr.city || '', lr.serviceInterest || '', lr.notes || '', lr.createdAt || new Date().toISOString(), lr.updatedAt || lr.createdAt || new Date().toISOString()]);
+      }
+    } catch { /* vendor_leads table may not exist yet */ }
 
     await seedIfEmpty();
     await seedCredentialsIfEmpty();

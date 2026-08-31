@@ -789,14 +789,20 @@ async function startServer() {
   }));
 
   app.post("/api/clients", asyncHandler(async (req, res) => {
+    const vendorId = getVendorId(req);
     const client: Client = {
       id: genId("cli-"),
       name: sanitizeStr(req.body.name, MAX_SHORT_STR),
       company: sanitizeStr(req.body.company, MAX_SHORT_STR) || "Particular",
       email: safeEmail(req.body.email),
       phone: sanitizeStr(req.body.phone, 50),
-      status: ['lead', 'negotiation', 'won', 'lost'].includes(req.body.status) ? req.body.status : "lead",
-      revenue: safeFloat(req.body.revenue)
+      status: ['lead', 'contacted', 'proposal', 'negotiation', 'won', 'lost'].includes(req.body.status) ? req.body.status : "lead",
+      revenue: safeFloat(req.body.revenue),
+      vendorId: vendorId || req.body.vendorId || undefined,
+      city: sanitizeStr(req.body.city, 255) || '',
+      serviceInterest: sanitizeStr(req.body.serviceInterest, 255) || '',
+      notes: sanitizeStr(req.body.notes) || '',
+      createdAt: new Date().toISOString()
     };
     await dao.createClient(client);
     res.status(201).json(client);
@@ -1876,26 +1882,22 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
     res.json(lead);
   }));
 
-  // Create vendor lead
+  // Create vendor lead (creates a CRM client row with vendor fields)
   app.post("/api/vendor-leads", asyncHandler(async (req, res) => {
     const vendorId = getVendorId(req);
     if (!vendorId) return res.status(401).json({ error: "No autenticado" });
-    const now = new Date().toISOString();
-    const lead = {
-      id: `vl-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+    const clientName = String(req.body.clientName || '').trim();
+    if (!clientName) return res.status(400).json({ error: "Nombre del cliente es obligatorio" });
+    const lead = await dao.upsertVendorLeadIntoClient({
       vendorId,
-      clientName: String(req.body.clientName || '').trim(),
+      clientName,
       phone: String(req.body.phone || '').trim(),
       serviceInterest: String(req.body.serviceInterest || '').trim(),
       city: String(req.body.city || '').trim(),
       email: String(req.body.email || '').trim(),
       notes: String(req.body.notes || '').trim(),
-      status: ['pending', 'contacted', 'proposal', 'negotiation', 'won', 'lost'].includes(req.body.status) ? req.body.status : 'pending',
-      createdAt: now,
-      updatedAt: now
-    };
-    if (!lead.clientName) return res.status(400).json({ error: "Nombre del cliente es obligatorio" });
-    await dao.createVendorLead(lead);
+      status: ['pending', 'contacted', 'proposal', 'negotiation', 'won', 'lost'].includes(req.body.status) ? req.body.status : 'pending'
+    });
     res.status(201).json(lead);
   }));
 

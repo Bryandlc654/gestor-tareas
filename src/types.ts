@@ -100,6 +100,11 @@ export interface Client {
   phone: string;
   status: 'lead' | 'contacted' | 'proposal' | 'negotiation' | 'won' | 'lost';
   revenue?: number;
+  vendorId?: string;          // salesperson who registered the lead
+  city?: string;              // city of the lead
+  serviceInterest?: string;   // service the lead is interested in
+  notes?: string;             // most relevant info from the conversation
+  createdAt?: string;
 }
 
 export interface Quote {

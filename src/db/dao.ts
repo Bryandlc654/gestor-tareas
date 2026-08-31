@@ -404,13 +404,13 @@ export async function deleteMeeting(id: string): Promise<void> {
 export async function listClients(): Promise<Client[]> {
   return cachedList<Client>('clients', async () => {
     const rows = await executeQuery('SELECT * FROM clients LIMIT 100000');
-    return rows.map((r: any) => ({ id: r.id, name: r.name, company: r.company, email: r.email, phone: r.phone, status: r.status, revenue: Number(r.revenue) }));
+    return rows.map((r: any) => ({ id: r.id, name: r.name, company: r.company, email: r.email, phone: r.phone, status: r.status, revenue: Number(r.revenue), vendorId: r.vendorId || undefined, city: r.city || '', serviceInterest: r.serviceInterest || '', notes: r.notes || '', createdAt: r.createdAt || undefined }));
   });
 }
 
 export async function createClient(data: Client): Promise<void> {
-  await executeQuery('INSERT INTO clients (id,name,company,email,phone,status,revenue) VALUES (?,?,?,?,?,?,?)',
-    [data.id, data.name, data.company, data.email, data.phone, data.status, data.revenue ?? 0]);
+  await executeQuery('INSERT INTO clients (id,name,company,email,phone,status,revenue,vendorId,city,serviceInterest,notes,createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+    [data.id, data.name, data.company, data.email, data.phone, data.status, data.revenue ?? 0, data.vendorId || null, data.city || '', data.serviceInterest || '', data.notes || '', data.createdAt || null]);
   await invalidateList('clients');
 }
 
@@ -831,51 +831,102 @@ export async function deleteMeetingMinute(id: string): Promise<void> {
   await cacheDelPattern('dao:meeting_minutes*');
 }
 
-// --- VENDOR LEADS ---
+// --- VENDOR LEADS (backed by CRM `clients` table) ---
+// Vendor leads ARE the CRM clients. They share the same rows; vendor-specific
+// fields (vendorId, city, serviceInterest, notes, createdAt) live on clients.
+
+function mapClientToVendorLead(r: any): VendorLead {
+  return {
+    id: r.id,
+    vendorId: r.vendorId || 'user-1',
+    clientName: r.name,
+    phone: r.phone || '',
+    serviceInterest: r.serviceInterest || '',
+    city: r.city || '',
+    email: r.email || '',
+    notes: r.notes || '',
+    status: (['pending', 'contacted', 'proposal', 'negotiation', 'won', 'lost'].includes(r.status) ? r.status : 'pending') as VendorLead['status'],
+    createdAt: r.createdAt || '',
+    updatedAt: r.updatedAt || r.createdAt || ''
+  };
+}
+
 export async function listVendorLeads(vendorId?: string): Promise<VendorLead[]> {
   return cachedList<VendorLead>(vendorId ? `vendor_leads:${vendorId}` : 'vendor_leads', async () => {
     if (vendorId) {
-      const rows = await executeQuery('SELECT * FROM vendor_leads WHERE vendorId=? ORDER BY createdAt DESC LIMIT 100000', [vendorId]);
-      return rows.map((r: any) => ({ id: r.id, vendorId: r.vendorId, clientName: r.clientName, phone: r.phone || '', serviceInterest: r.serviceInterest || '', city: r.city || '', email: r.email || '', notes: r.notes || '', status: r.status || 'pending', createdAt: r.createdAt, updatedAt: r.updatedAt }));
+      const rows = await executeQuery('SELECT * FROM clients WHERE vendorId=? ORDER BY createdAt DESC LIMIT 100000', [vendorId]);
+      return rows.map(mapClientToVendorLead);
     }
-    const rows = await executeQuery('SELECT * FROM vendor_leads ORDER BY createdAt DESC LIMIT 100000');
-    return rows.map((r: any) => ({ id: r.id, vendorId: r.vendorId, clientName: r.clientName, phone: r.phone || '', serviceInterest: r.serviceInterest || '', city: r.city || '', email: r.email || '', notes: r.notes || '', status: r.status || 'pending', createdAt: r.createdAt, updatedAt: r.updatedAt }));
+    const rows = await executeQuery('SELECT * FROM clients ORDER BY createdAt DESC LIMIT 100000');
+    return rows.map(mapClientToVendorLead);
   });
 }
 
 export async function getVendorLeadById(id: string): Promise<VendorLead | null> {
-  const rows = await executeQuery('SELECT * FROM vendor_leads WHERE id=? LIMIT 1', [id]);
+  const rows = await executeQuery('SELECT * FROM clients WHERE id=? LIMIT 1', [id]);
   if (!rows.length) return null;
-  const r = rows[0];
-  return { id: r.id, vendorId: r.vendorId, clientName: r.clientName, phone: r.phone || '', serviceInterest: r.serviceInterest || '', city: r.city || '', email: r.email || '', notes: r.notes || '', status: r.status || 'pending', createdAt: r.createdAt, updatedAt: r.updatedAt };
+  return mapClientToVendorLead(rows[0]);
 }
 
 export async function createVendorLead(data: VendorLead): Promise<void> {
-  await executeQuery('INSERT INTO vendor_leads (id,vendorId,clientName,phone,serviceInterest,city,email,notes,status,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-    [data.id, data.vendorId, data.clientName, data.phone, data.serviceInterest, data.city, data.email, data.notes, data.status, data.createdAt, data.updatedAt]);
+  await executeQuery('INSERT INTO clients (id,name,company,email,phone,status,revenue,vendorId,city,serviceInterest,notes,createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+    [data.id, data.clientName, 'Particular', data.email, data.phone, data.status, 0, data.vendorId, data.city, data.serviceInterest, data.notes, data.createdAt]);
   await invalidateList('vendor_leads');
   await invalidateList(`vendor_leads:${data.vendorId}`);
+  await invalidateList('clients');
 }
 
 export async function updateVendorLead(id: string, data: Partial<VendorLead>): Promise<boolean> {
-  const fields = Object.keys(data).filter(k => k !== 'id');
+  const colMapping: Record<string, string> = { clientName: 'name' };
+  const fields = Object.keys(data).filter(k => k !== 'id').filter(k => colMapping[k] || ['status', 'vendorId', 'city', 'serviceInterest', 'notes', 'phone', 'email', 'updatedAt'].includes(k));
   if (!fields.length) return false;
-  const sets = fields.map(f => `${f}=?`).join(',');
+  const sets = fields.map(f => `${colMapping[f] || f}=?`).join(',');
   const vals = fields.map(f => (data as any)[f]);
   vals.push(id);
-  const result = await executeQuery(`UPDATE vendor_leads SET ${sets} WHERE id=?`, vals);
+  const result = await executeQuery(`UPDATE clients SET ${sets} WHERE id=?`, vals);
   await invalidateList('vendor_leads');
   if (data.vendorId) await invalidateList(`vendor_leads:${data.vendorId}`);
+  await invalidateList('clients');
   return result.affectedRows > 0;
 }
 
 export async function deleteVendorLead(id: string): Promise<void> {
   const lead = await getVendorLeadById(id);
-  await executeQuery('DELETE FROM vendor_leads WHERE id=?', [id]);
+  await executeQuery('DELETE FROM clients WHERE id=?', [id]);
   await executeQuery('DELETE FROM vendor_activities WHERE leadId=?', [id]);
   await invalidateList('vendor_leads');
   if (lead) await invalidateList(`vendor_leads:${lead.vendorId}`);
+  await invalidateList('clients');
 }
+
+export async function upsertVendorLeadIntoClient(data: {
+  id?: string;
+  vendorId: string;
+  clientName: string;
+  phone: string;
+  serviceInterest: string;
+  city: string;
+  email: string;
+  notes: string;
+  status: VendorLead['status'];
+}): Promise<VendorLead> {
+  const existing = data.id ? await getVendorLeadById(data.id) : null;
+  const now = new Date().toISOString();
+  if (existing) {
+    await executeQuery(`UPDATE clients SET name=?, phone=?, email=?, serviceInterest=?, city=?, notes=?, status=?, vendorId=?, updatedAt=? WHERE id=?`,
+      [data.clientName, data.phone, data.email, data.serviceInterest, data.city, data.notes, data.status, data.vendorId, now, existing.id]);
+    await invalidateList('vendor_leads');
+    await invalidateList('clients');
+    return { ...existing, clientName: data.clientName, phone: data.phone, serviceInterest: data.serviceInterest, city: data.city, email: data.email, notes: data.notes, status: data.status, vendorId: data.vendorId, updatedAt: now };
+  }
+  const id = `cli-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  await executeQuery('INSERT INTO clients (id,name,company,email,phone,status,revenue,vendorId,city,serviceInterest,notes,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    [id, data.clientName, 'Particular', data.email, data.phone, data.status, 0, data.vendorId, data.city, data.serviceInterest, data.notes, now, now]);
+  await invalidateList('vendor_leads');
+  await invalidateList('clients');
+  return { id, vendorId: data.vendorId, clientName: data.clientName, phone: data.phone, serviceInterest: data.serviceInterest, city: data.city, email: data.email, notes: data.notes, status: data.status, createdAt: now, updatedAt: now };
+}
+
 
 // --- VENDOR LEAD ACTIVITIES ---
 export async function listVendorActivities(leadId?: string, vendorId?: string, from?: string, to?: string): Promise<VendorLeadActivity[]> {
