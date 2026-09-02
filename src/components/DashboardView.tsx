@@ -88,7 +88,7 @@ export default function DashboardView({
             <DollarSign className="w-4 h-4 text-emerald-600" />
           </div>
           <p className="text-xl font-semibold text-[#37352F] mt-2">
-            S/ {totalRevenue.toLocaleString()}
+            $ {totalRevenue.toLocaleString()}
           </p>
           <p className="text-[10px] text-[#91918E] mt-1">Suma de contratos + ganados</p>
         </div>
@@ -219,7 +219,7 @@ export default function DashboardView({
               <LineChart data={billingHistory}>
                 <XAxis dataKey="mes" fontSize={10} stroke="#91918E" />
                 <YAxis fontSize={10} stroke="#91918E" />
-                <Tooltip formatter={(value) => [`S/ ${value}`, '']} />
+                <Tooltip formatter={(value) => [`$ ${value}`, '']} />
                 <Line type="monotone" dataKey="facturado" stroke="#37352F" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                 <Line type="monotone" dataKey="cotizado" stroke="#91918E" strokeWidth={1.5} strokeDasharray="3 3" dot={{ r: 2 }} />
               </LineChart>

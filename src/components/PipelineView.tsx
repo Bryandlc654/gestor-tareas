@@ -386,7 +386,7 @@ export default function PipelineView({
                         {quote.description}
                       </td>
                       <td className="py-3 px-4 font-mono font-semibold text-[#37352F]">
-                        S/ {quote.amount.toLocaleString()}
+                        $ {quote.amount.toLocaleString()}
                       </td>
                       <td className="py-3 px-4 text-[#91918E] font-mono">
                         {quote.date}
@@ -502,7 +502,7 @@ export default function PipelineView({
 
                 <div className="flex items-center justify-between mt-5 pt-3 border-t border-[#EDEDEB]">
                   <div className="text-xs font-semibold text-[#37352F]">
-                    Monto total: <span className="font-mono font-bold text-[#2D4D2E]">S/ {contract.value.toLocaleString()}</span>
+                    Monto total: <span className="font-mono font-bold text-[#2D4D2E]">$ {contract.value.toLocaleString()}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex gap-1.5">
@@ -579,7 +579,7 @@ export default function PipelineView({
 
               <div className="flex items-center justify-between mt-5 pt-3 border-t border-[#EDEDEB]">
                 <span className="text-xs font-mono font-bold text-[#37352F]">
-                  S/ {service.price.toLocaleString()} {service.type === 'monthly' ? '/ mes' : ''}
+                  $ {service.price.toLocaleString()} {service.type === 'monthly' ? '/ mes' : ''}
                 </span>
 
                 <div className="flex gap-2">
@@ -805,7 +805,7 @@ export default function PipelineView({
                   <span className="text-[9px] uppercase tracking-wider text-[#91918E] font-semibold flex items-center gap-1">
                     <DollarSign className="w-3 h-3" /> Ingreso Est.
                   </span>
-                  <p className="font-medium font-mono">{detailClient.revenue ? `S/ ${detailClient.revenue.toLocaleString()}` : '—'}</p>
+                  <p className="font-medium font-mono">{detailClient.revenue ? `$ ${detailClient.revenue.toLocaleString()}` : '—'}</p>
                 </div>
                 <div className="space-y-1.5">
                   <span className="text-[9px] uppercase tracking-wider text-[#91918E] font-semibold flex items-center gap-1">
@@ -843,7 +843,7 @@ export default function PipelineView({
                       <div key={q.id} className="flex items-center justify-between px-3 py-2 bg-[#F7F7F5] rounded border border-[#EDEDEB]">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{q.description}</span>
-                          <span className="text-[#91918E]">— S/ {q.amount?.toLocaleString()}</span>
+                          <span className="text-[#91918E]">— $ {q.amount?.toLocaleString()}</span>
                         </div>
                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
                           q.status === 'approved' ? 'bg-[#DBEDDB] text-[#2D4D2E]' :
@@ -871,7 +871,7 @@ export default function PipelineView({
                       <div key={c.id} className="flex items-center justify-between px-3 py-2 bg-[#F7F7F5] rounded border border-[#EDEDEB]">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{c.title}</span>
-                          <span className="text-[#91918E]">— S/ {c.value?.toLocaleString()}</span>
+                          <span className="text-[#91918E]">— $ {c.value?.toLocaleString()}</span>
                         </div>
                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
                           c.status === 'active' ? 'bg-[#DBEDDB] text-[#2D4D2E]' :
@@ -953,7 +953,7 @@ export default function PipelineView({
                   <span className="text-[9px] uppercase tracking-wider text-[#91918E] font-semibold flex items-center gap-1">
                     <DollarSign className="w-3 h-3" /> Monto
                   </span>
-                  <p className="font-medium font-mono text-sm">S/ {detailQuote.amount.toLocaleString()}</p>
+                  <p className="font-medium font-mono text-sm">$ {detailQuote.amount.toLocaleString()}</p>
                 </div>
                 <div className="space-y-1.5">
                   <span className="text-[9px] uppercase tracking-wider text-[#91918E] font-semibold flex items-center gap-1">
@@ -1032,7 +1032,7 @@ export default function PipelineView({
                   <span className="text-[9px] uppercase tracking-wider text-[#91918E] font-semibold flex items-center gap-1">
                     <DollarSign className="w-3 h-3" /> Valor del Contrato
                   </span>
-                  <p className="font-medium font-mono text-sm">S/ {detailContract.value.toLocaleString()}</p>
+                  <p className="font-medium font-mono text-sm">$ {detailContract.value.toLocaleString()}</p>
                 </div>
                 <div className="space-y-1.5">
                   <span className="text-[9px] uppercase tracking-wider text-[#91918E] font-semibold flex items-center gap-1">
@@ -1085,7 +1085,7 @@ export default function PipelineView({
               </div>
 
               <div>
-                <label className="block font-medium text-[#5A5A57]">Presupuesto (S/)</label>
+                <label className="block font-medium text-[#5A5A57]">Presupuesto ($)</label>
                 <input
                   type="number"
                   required
@@ -1189,7 +1189,7 @@ export default function PipelineView({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-medium text-[#5A5A57]">Monto (S/)</label>
+                  <label className="block font-medium text-[#5A5A57]">Monto ($)</label>
                   <input
                     type="number"
                     required
@@ -1325,7 +1325,7 @@ export default function PipelineView({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-medium text-[#5A5A57]">Precio (S/)</label>
+                  <label className="block font-medium text-[#5A5A57]">Precio ($)</label>
                   <input
                     type="number"
                     required

@@ -1753,7 +1753,7 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
             if (args.status) filtered = filtered.filter(q => q.status === args.status);
             const quoteList = filtered.map(q => {
               const client = allClients.find(c => c.id === q.clientId);
-              return `- ${q.description} - S/${q.amount} - ${q.status}${client ? ` (Cliente: ${client.name})` : ''}`;
+              return `- ${q.description} - $${q.amount} - ${q.status}${client ? ` (Cliente: ${client.name})` : ''}`;
             }).join('\n');
             messages.push({
               role: "tool",
@@ -1766,7 +1766,7 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
             if (args.status) filtered = filtered.filter(c => c.status === args.status);
             const contractList = filtered.map(c => {
               const client = allClients.find(cl => cl.id === c.clientId);
-              return `- ${c.title} - S/${c.value} - ${c.status} (${c.startDate} a ${c.endDate})${client ? ` - Cliente: ${client.name}` : ''}`;
+              return `- ${c.title} - $${c.value} - ${c.status} (${c.startDate} a ${c.endDate})${client ? ` - Cliente: ${client.name}` : ''}`;
             }).join('\n');
             messages.push({
               role: "tool",
@@ -1777,7 +1777,7 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
           } else if (tc.function.name === "get_services") {
             let filtered = [...allServices];
             if (args.type) filtered = filtered.filter(s => s.type === args.type);
-            const serviceList = filtered.map(s => `- ${s.name} - S/${s.price} (${s.type})${s.description ? `: ${s.description}` : ''}`).join('\n');
+            const serviceList = filtered.map(s => `- ${s.name} - $${s.price} (${s.type})${s.description ? `: ${s.description}` : ''}`).join('\n');
             messages.push({
               role: "tool",
               tool_call_id: tc.id,
