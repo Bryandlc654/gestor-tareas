@@ -993,10 +993,11 @@ export default function App() {
             <div className="animate-fade-in">
               {hasPermission('manage_crm') ? (
                 <PipelineView
-                  clients={clients}
+                  clients={clients.filter(c => c.vendorId === activeUserId)}
                   quotes={quotes}
                   contracts={contracts}
                   services={services}
+                  activeUserId={activeUserId}
                   onAddClient={handleAddClient}
                   onUpdateClient={handleUpdateClient}
                   onDeleteClient={handleDeleteClient}

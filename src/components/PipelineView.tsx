@@ -12,6 +12,7 @@ interface PipelineViewProps {
   quotes: Quote[];
   contracts: Contract[];
   services: Service[];
+  activeUserId?: string;
   onAddClient: (c: Partial<Client>) => Promise<any>;
   onUpdateClient: (id: string, c: Partial<Client>) => Promise<any>;
   onDeleteClient: (id: string) => Promise<any>;

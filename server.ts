@@ -1884,12 +1884,11 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
     return roleId === 'role-admin' || roleId === 'role-superadmin';
   }
 
-  // List vendor leads (admin: all, vendor: only own)
+  // List vendor leads: each user only sees leads they manage (isolated by userId)
   app.get("/api/vendor-leads", asyncHandler(async (req, res) => {
     const vendorId = await getVendorId(req);
     if (!vendorId) return res.status(401).json({ error: "No autenticado" });
-    const admin = await isAdminUser(req);
-    const leads = await dao.listVendorLeads(admin ? undefined : vendorId);
+    const leads = await dao.listVendorLeads(vendorId);
     res.json(leads);
   }));
 
@@ -1898,7 +1897,8 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
   app.get("/api/vendor-leads/report", asyncHandler(async (req, res) => {
     const vendorId = await getVendorId(req);
     if (!vendorId) return res.status(401).json({ error: "No autenticado" });
-    const targetVendorId = (await isAdminUser(req)) ? (req.query.vendorId as string || undefined) : vendorId;
+    // Each user only sees their own leads/activities in the report (isolated by userId)
+    const targetVendorId = vendorId;
     const from = req.query.from as string || undefined;
     const to = req.query.to as string || undefined;
 
@@ -1941,7 +1941,7 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
     if (!vendorId) return res.status(401).json({ error: "No autenticado" });
     const lead = await dao.getVendorLeadById(req.params.id);
     if (!lead) return res.status(404).json({ error: "Lead no encontrado" });
-    if (!(await isAdminUser(req)) && lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    if (lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
     res.json(lead);
   }));
 
@@ -1970,7 +1970,7 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
     if (!vendorId) return res.status(401).json({ error: "No autenticado" });
     const existing = await dao.getVendorLeadById(req.params.id);
     if (!existing) return res.status(404).json({ error: "Lead no encontrado" });
-    if (!(await isAdminUser(req)) && existing.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    if (existing.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
     const updates: any = { ...req.body, updatedAt: new Date().toISOString() };
     delete updates.id;
     delete updates.vendorId;
@@ -1984,7 +1984,7 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
     if (!vendorId) return res.status(401).json({ error: "No autenticado" });
     const existing = await dao.getVendorLeadById(req.params.id);
     if (!existing) return res.status(404).json({ error: "Lead no encontrado" });
-    if (!(await isAdminUser(req)) && existing.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    if (existing.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
     await dao.deleteVendorLead(req.params.id);
     res.json({ success: true });
   }));
@@ -1995,7 +1995,7 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
     if (!vendorId) return res.status(401).json({ error: "No autenticado" });
     const lead = await dao.getVendorLeadById(req.params.id);
     if (!lead) return res.status(404).json({ error: "Lead no encontrado" });
-    if (!(await isAdminUser(req)) && lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    if (lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
     const activities = await dao.listVendorActivities(req.params.id);
     res.json(activities);
   }));
@@ -2006,7 +2006,7 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
     if (!vendorId) return res.status(401).json({ error: "No autenticado" });
     const lead = await dao.getVendorLeadById(req.params.id);
     if (!lead) return res.status(404).json({ error: "Lead no encontrado" });
-    if (!(await isAdminUser(req)) && lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
+    if (lead.vendorId !== vendorId) return res.status(403).json({ error: "Acceso denegado" });
     const activity = {
       id: `va-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
       leadId: req.params.id,

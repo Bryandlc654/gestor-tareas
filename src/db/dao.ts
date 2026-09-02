@@ -916,6 +916,7 @@ export async function upsertVendorLeadIntoClient(data: {
     await executeQuery(`UPDATE clients SET name=?, phone=?, email=?, serviceInterest=?, city=?, notes=?, status=?, vendorId=?, updatedAt=? WHERE id=?`,
       [data.clientName, data.phone, data.email, data.serviceInterest, data.city, data.notes, data.status, data.vendorId, now, existing.id]);
     await invalidateList('vendor_leads');
+    await invalidateList(`vendor_leads:${data.vendorId}`);
     await invalidateList('clients');
     return { ...existing, clientName: data.clientName, phone: data.phone, serviceInterest: data.serviceInterest, city: data.city, email: data.email, notes: data.notes, status: data.status, vendorId: data.vendorId, updatedAt: now };
   }
@@ -923,6 +924,7 @@ export async function upsertVendorLeadIntoClient(data: {
   await executeQuery('INSERT INTO clients (id,name,company,email,phone,status,revenue,vendorId,city,serviceInterest,notes,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
     [id, data.clientName, 'Particular', data.email, data.phone, data.status, 0, data.vendorId, data.city, data.serviceInterest, data.notes, now, now]);
   await invalidateList('vendor_leads');
+  await invalidateList(`vendor_leads:${data.vendorId}`);
   await invalidateList('clients');
   return { id, vendorId: data.vendorId, clientName: data.clientName, phone: data.phone, serviceInterest: data.serviceInterest, city: data.city, email: data.email, notes: data.notes, status: data.status, createdAt: now, updatedAt: now };
 }
@@ -948,6 +950,7 @@ export async function createVendorActivity(data: VendorLeadActivity): Promise<vo
   await executeQuery('INSERT INTO vendor_activities (id,leadId,vendorId,type,description,createdAt) VALUES (?,?,?,?,?,?)',
     [data.id, data.leadId, data.vendorId, data.type, data.description, data.createdAt]);
   await invalidateList('vendor_activities');
+  await invalidateList(`vendor_activities:${data.leadId}::::`);
   await invalidateList(`vendor_leads:${data.vendorId}`);
   await invalidateList('vendor_leads');
 }
