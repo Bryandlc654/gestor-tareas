@@ -233,8 +233,6 @@ export default function App() {
 
   const hasPermission = (permissionKey: string) => {
     if (!currentRole) return false;
-    // Admins bypass standard checks
-    if (currentRole.id === 'role-admin' || currentRole.id === 'role-superadmin') return true;
     return currentRole.permissions.includes(permissionKey);
   };
 
