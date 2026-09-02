@@ -238,6 +238,47 @@ export default function App() {
     return currentRole.permissions.includes(permissionKey);
   };
 
+  // Central RBAC map linking each tab to the permission(s) that grant access.
+  // A role may access a module only if it holds at least one of its required permissions.
+  const MODULE_PERMISSIONS: Record<string, string[]> = {
+    dashboard: ['view_dashboard'],
+    pipeline: ['manage_crm'],
+    vendor_reports: ['manage_crm'],
+    workspaces: ['manage_workspaces'],
+    calendar: ['view_calendar'],
+    actas: ['view_actas'],
+    assistant: ['view_assistant'],
+    credentials: ['manage_credentials'],
+    rbac: ['manage_users', 'manage_roles'],
+    chat: ['chat_all'],
+    tickets: ['view_all_tickets'],
+    agency: [],
+    public_portal: [],
+  };
+
+  const canAccessTab = (tab: string): boolean => {
+    const required = MODULE_PERMISSIONS[tab];
+    // Modules with no defined restriction are considered open to authenticated users.
+    if (!required || required.length === 0) return true;
+    return required.some(p => hasPermission(p));
+  };
+
+  const guardedSetActiveTab = (tab: any) => {
+    if (canAccessTab(tab)) {
+      setActiveTab(tab);
+      sessionStorage.setItem('nbp_activeTab', tab);
+    }
+  };
+
+  // Redirect the user to the first module they can access if the current tab is not allowed.
+  useEffect(() => {
+    if (!currentRole) return;
+    if (canAccessTab(activeTab)) return;
+    const firstAccessible = (['dashboard', 'pipeline', 'vendor_reports', 'workspaces', 'calendar', 'actas', 'assistant', 'credentials', 'rbac', 'chat', 'tickets'] as const)
+      .find(t => canAccessTab(t));
+    if (firstAccessible) setActiveTab(firstAccessible);
+  }, [activeTab, currentRole]);
+
   // --- MUTATIVE ASYNC ACTION MIDDLEWARE PIPELINE ---
   const callApi = async (url: string, method: string, body?: any) => {
     try {
@@ -678,6 +719,7 @@ export default function App() {
               <span className="block text-[10px] text-[#91918E] uppercase tracking-wider font-semibold mb-2">Administración</span>
               
               <div className="space-y-0.5">
+                {hasPermission('view_dashboard') && (
                 <button
                   onClick={() => setActiveTab('dashboard')}
                   className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors font-medium flex items-center justify-between ${
@@ -686,6 +728,7 @@ export default function App() {
                 >
                   <span>Dashboard Principal</span>
                 </button>
+                )}
 
                 {hasPermission('manage_crm') && (
                 <button
@@ -723,6 +766,7 @@ export default function App() {
                 </button>
                 )}
 
+                {hasPermission('view_calendar') && (
                 <button
                   onClick={() => setActiveTab('calendar')}
                   className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors font-medium flex items-center justify-between ${
@@ -731,7 +775,9 @@ export default function App() {
                 >
                   <span>Calendario & Todo</span>
                 </button>
+                )}
 
+                {hasPermission('view_actas') && (
                 <button
                   onClick={() => setActiveTab('actas')}
                   className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors font-medium flex items-center justify-between ${
@@ -740,12 +786,14 @@ export default function App() {
                 >
                   <span>Actas de Reunión</span>
                 </button>
+                )}
               </div>
             </div>
 
             <div>
               <span className="block text-[10px] text-[#91918E] uppercase tracking-wider font-semibold mb-2">Asistente</span>
               <div className="space-y-0.5">
+                {hasPermission('view_assistant') && (
                 <button
                   onClick={() => setActiveTab('assistant')}
                   className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors font-medium flex items-center justify-between ${
@@ -754,6 +802,7 @@ export default function App() {
                 >
                   <span className="flex items-center gap-1"><Sparkles className="w-3 h-3" /> Asistente IA</span>
                 </button>
+                )}
               </div>
             </div>
 
@@ -924,6 +973,7 @@ export default function App() {
         <section className="flex-1" id="active-tab-port">
           
           {activeTab === 'dashboard' && (
+            hasPermission('view_dashboard') ? (
             <DashboardView 
               tasks={tasks}
               clients={clients}
@@ -932,6 +982,13 @@ export default function App() {
               users={users}
               tickets={tickets}
             />
+            ) : (
+              <div className="p-12 text-center text-neutral-500 flex flex-col items-center justify-center gap-1 border border-dashed rounded-lg bg-white">
+                <ShieldAlert className="w-8 h-8 text-neutral-400" />
+                <span className="font-bold text-neutral-800">Acceso Restringido</span>
+                <span className="text-xs">Tu rol no tiene permiso para acceder a este módulo.</span>
+              </div>
+            )
           )}
 
           {activeTab === 'pipeline' && (
@@ -1020,6 +1077,7 @@ export default function App() {
 
           {activeTab === 'calendar' && (
             <div className="animate-fade-in">
+              {hasPermission('view_calendar') ? (
               <CalendarTodoView
                 personalTodos={personalTodos}
                 meetings={meetings}
@@ -1033,6 +1091,13 @@ export default function App() {
                 onUpdateMeeting={handleUpdateMeeting}
                 onDeleteMeeting={handleDeleteMeeting}
               />
+              ) : (
+                <div className="p-12 text-center text-neutral-500 flex flex-col items-center justify-center gap-1 border border-dashed rounded-lg bg-white">
+                  <ShieldAlert className="w-8 h-8 text-neutral-400" />
+                  <span className="font-bold text-neutral-800">Acceso Restringido</span>
+                  <span className="text-xs">Tu rol no tiene permiso para acceder a este módulo.</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -1144,12 +1209,21 @@ export default function App() {
           )}
 
           {activeTab === 'assistant' && (
+            hasPermission('view_assistant') ? (
             <div className="animate-fade-in h-full">
               <AIAssistantView token={token} />
             </div>
+            ) : (
+              <div className="p-12 text-center text-neutral-500 flex flex-col items-center justify-center gap-1 border border-dashed rounded-lg bg-white">
+                <ShieldAlert className="w-8 h-8 text-neutral-400" />
+                <span className="font-bold text-neutral-800">Acceso Restringido</span>
+                <span className="text-xs">Tu rol no tiene permiso para acceder a este módulo.</span>
+              </div>
+            )
           )}
 
           {activeTab === 'actas' && (
+            hasPermission('view_actas') ? (
             <div className="animate-fade-in h-full">
               <MeetingMinutesView 
                 meetingMinutes={meetingMinutes} 
@@ -1158,6 +1232,13 @@ export default function App() {
                 onDelete={handleDeleteMeetingMinute} 
               />
             </div>
+            ) : (
+              <div className="p-12 text-center text-neutral-500 flex flex-col items-center justify-center gap-1 border border-dashed rounded-lg bg-white">
+                <ShieldAlert className="w-8 h-8 text-neutral-400" />
+                <span className="font-bold text-neutral-800">Acceso Restringido</span>
+                <span className="text-xs">Tu rol no tiene permiso para acceder a este módulo.</span>
+              </div>
+            )
           )}
         </section>
       </main>

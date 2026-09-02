@@ -474,8 +474,8 @@ async function seedIfEmpty(): Promise<void> {
     ['main', 'Iceberg Agency', 'Desarrollo Web & Apps de Alto Rendimiento', 'Especializados en crear plataformas web ultrarrápidas, diseño de experiencia de usuario minimalista y automatizaciones a medida.', JSON.stringify(['React & Next.js', 'Tailwind CSS', 'Node.js & Express', 'Docker & Kubernetes', 'Cloud Run Integrations'])]);
 
   const roles = [
-    { id: 'role-superadmin', name: 'Super Administrador', description: 'Acceso absoluto a todos los módulos.', permissions: JSON.stringify(['manage_workspaces','manage_crm','manage_users','manage_roles','manage_credentials','view_all_tickets','chat_all','manage_agency']) },
-    { id: 'role-admin', name: 'Administrador / CEO', description: 'Acceso total al sistema.', permissions: JSON.stringify(['manage_workspaces','manage_crm','manage_users','manage_roles','manage_credentials','view_all_tickets','chat_all']) },
+    { id: 'role-superadmin', name: 'Super Administrador', description: 'Acceso absoluto a todos los módulos.', permissions: JSON.stringify(['view_dashboard','view_calendar','view_actas','view_assistant','manage_workspaces','manage_crm','manage_users','manage_roles','manage_credentials','view_all_tickets','chat_all','manage_agency']) },
+    { id: 'role-admin', name: 'Administrador / CEO', description: 'Acceso total al sistema.', permissions: JSON.stringify(['view_dashboard','view_calendar','view_actas','view_assistant','manage_workspaces','manage_crm','manage_users','manage_roles','manage_credentials','view_all_tickets','chat_all']) },
     { id: 'role-developer', name: 'Desarrollador / Líder Técnico', description: 'Acceso a workspaces, Kanban, credenciales y tickets.', permissions: JSON.stringify(['manage_workspaces','view_all_tickets','chat_all','view_credentials']) },
     { id: 'role-designer', name: 'Diseñador UX/UI', description: 'Diseño de interfaces y chat.', permissions: JSON.stringify(['manage_workspaces','chat_all']) },
     { id: 'role-client', name: 'Cliente Invitado', description: 'Lectura de proyectos, tickets y contratos.', permissions: JSON.stringify(['view_assigned_workspace','create_ticket']) },

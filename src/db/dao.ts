@@ -936,8 +936,8 @@ export async function listVendorActivities(leadId?: string, vendorId?: string, f
     const params: any[] = [];
     if (leadId) { sql += ' AND leadId=?'; params.push(leadId); }
     if (vendorId) { sql += ' AND vendorId=?'; params.push(vendorId); }
-    if (from) { sql += ' AND createdAt>=?'; params.push(from); }
-    if (to) { sql += ' AND createdAt<=?'; params.push(to + ' 23:59:59'); }
+    if (from) { sql += ' AND createdAt>=?'; params.push(from + 'T00:00:00'); }
+    if (to) { sql += ' AND createdAt<=?'; params.push(to + 'T23:59:59'); }
     sql += ' ORDER BY createdAt DESC LIMIT 100000';
     const rows = await executeQuery(sql, params);
     return rows.map((r: any) => ({ id: r.id, leadId: r.leadId, vendorId: r.vendorId, type: r.type, description: r.description || '', createdAt: r.createdAt }));

@@ -1905,12 +1905,8 @@ Responde siempre en español, de forma clara y profesional. Si el usuario pide c
     const leads = await dao.listVendorLeads(targetVendorId);
     const activities = await dao.listVendorActivities(undefined, targetVendorId, from, to);
 
-    // Filter leads that have activities in range, or all if no range specified
-    let filteredLeads = leads;
-    if (from || to) {
-      const leadIdsWithActivity = new Set(activities.map(a => a.leadId));
-      filteredLeads = leads.filter(l => leadIdsWithActivity.has(l.id));
-    }
+    // Detailed client section always shows all leads so the PDF detail is never blank.
+    const filteredLeads = leads;
 
     // Count by status
     const byStatus: Record<string, number> = { pending: 0, contacted: 0, proposal: 0, negotiation: 0, won: 0, lost: 0 };

@@ -46,6 +46,10 @@ export default function UserRoleView({
 
   // List of all permissions globally in our system
   const availablePermissions = [
+    { key: 'view_dashboard', label: 'Dashboard Principal', desc: 'Ver el panel principal con métricas generales' },
+    { key: 'view_calendar', label: 'Calendario & Todo', desc: 'Acceso a calendario, reuniones y tareas personales' },
+    { key: 'view_actas', label: 'Actas de Reunión', desc: 'Crear y ver actas de reunión' },
+    { key: 'view_assistant', label: 'Asistente IA', desc: 'Usar el asistente de inteligencia artificial' },
     { key: 'manage_workspaces', label: 'Gestión de Workspaces & Kanban', desc: 'Crear tableros, folders y tarjetas de tareas' },
     { key: 'manage_crm', label: 'Módulo CRM Ventas', desc: 'Gestionar clientes, cotizaciones y contratos' },
     { key: 'manage_users', label: 'Control de Usuarios', desc: 'Ver, añadir o editar usuarios registrados' },
